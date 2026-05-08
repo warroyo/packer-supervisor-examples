@@ -19,323 +19,286 @@ The two builders take fundamentally different approaches:
 | Authentication            | vCenter username/password                    | A kubeconfig pointing at the Supervisor cluster       |
 | Placement                 | datacenter / cluster / host / datastore      | Supervisor namespace + VM class + StorageClass        |
 | Source media              | ISO file on a datastore or content library   | A `VirtualMachineImage` published to the namespace    |
-| Bootstrap                 | Kickstart over HTTP or a CD-ROM              | cloud-init bootstrap data on the source VM            |
+| Bootstrap                 | Kickstart over HTTP or a CD-ROM              | Kickstart baked into a remastered ISO                 |
 | Output                    | Template, content-library item, or OVF export | Published image in a content library (downloadable as OVA) |
 
-Practically: there is no kickstart, no boot command, no HTTP server. You bring
-a pre-built Oracle Linux 9 cloud image, the builder clones it, cloud-init seeds
-the build user, Packer SSHes in to run provisioners, and the customized image
-is published back to a content library.
+There is no cloud-init bootstrap, no HTTP server, no boot command. A custom
+ISO with the kickstart baked in is built locally, imported into a content
+library by Packer, and used to install OL9 unattended. After the first reboot
+Packer SSHes in and runs provisioners, then publishes the result.
 
 ## Repository layout
 
 ```
 .
+├── Makefile                                          # Build orchestration
 ├── README.md
-└── builds/
-    └── linux/
-        └── oracle/
-            └── 9/
-                ├── linux-oracle.pkr.hcl              # Builder + build blocks
-                ├── linux-oracle.pkrvars.hcl.example  # Sample input values
-                ├── variables.pkr.hcl                 # Variable declarations
-                └── data/
-                    └── cloud-init.pkrtpl.hcl         # cloud-init user-data template
+├── builds/
+│   └── linux/
+│       └── oracle/
+│           └── 9/
+│               ├── linux-oracle.pkr.hcl              # vsphere-supervisor builder + build block
+│               ├── remaster.pkr.hcl                  # Remaster-ISO build stage (null + shell-local)
+│               ├── linux-oracle.pkrvars.hcl.example  # Sample input values — copy and edit
+│               ├── variables.pkr.hcl                 # Variable declarations
+│               └── data/
+│                   └── ks.cfg.tpl                    # Kickstart template (rendered by remaster-iso.sh)
+└── scripts/
+    └── remaster-iso.sh                               # ISO remastering script
 ```
 
 ## Prerequisites
 
-You will need:
-
 - A vSphere environment with **vSphere with Tanzu / Supervisor** enabled.
-- A **Supervisor namespace** you can deploy into. You will need its name.
-- A **VirtualMachineClass** that fits your hardware needs
-  (`kubectl get virtualmachineclass`).
-- A **StorageClass** assigned to your namespace
-  (`kubectl get storageclass`).
-- A **content library** linked to the Supervisor namespace that contains the
-  Oracle Linux 9 source image. See [Preparing the source image](#preparing-the-source-image)
-  below for how to get one in.
-- A **target content library** the Supervisor namespace is allowed to publish
-  to. This is where the finished image lands and where you download the OVA
-  from.
-- A **kubeconfig** that authenticates to the Supervisor cluster and is set to
-  the namespace above as its current context. Verify with `kubectl get ns`.
-- **Packer 1.15.0+** locally, with the `github.com/vmware/vsphere` plugin
-  v2.1.1+ (Packer installs this for you on `packer init`).
-- **Network access from your Packer host to the source VM over SSH.** The
-  source VM is created inside the Supervisor namespace and Packer needs to
-  reach its IP/SSH port directly. If the namespace network is not routable
-  from your host, run Packer from a jump host that is.
-- An **SHA-512 hashed password** for the build user. Generate one with:
+- A **Supervisor namespace** you can deploy into.
+- A **VirtualMachineClass** (`kubectl get virtualmachineclass`).
+- A **StorageClass** assigned to your namespace (`kubectl get storageclass`).
+- A **writable content library** linked to the namespace — used to hold the
+  custom ISO during import and to publish the finished image.
+- A **kubeconfig** targeting the Supervisor cluster and namespace.
+  Verify with `kubectl get ns`.
+- **Packer 1.15.0+** with the `github.com/vmware/vsphere` plugin v2.1.1+
+  (installed automatically by `packer init` / `make init`).
+- **Remaster tools** (required to build the custom ISO):
+  ```sh
+  # macOS
+  brew install xorriso gettext && brew link --force gettext
+  # Linux
+  dnf install xorriso gettext   # or apt install xorriso gettext
   ```
-  mkpasswd -m sha-512
-  # or
-  openssl passwd -6
+- **Network access from your Packer host to the source VM over SSH.** The VM
+  is created inside the Supervisor namespace; if the namespace network is not
+  routable from your host, run Packer from a jump host that is.
+- An **SHA-512 hashed password** for the build user:
+  ```sh
+  mkpasswd -m sha-512   # or: openssl passwd -6
   ```
 
-## Preparing the source image
-
-The `vsphere-supervisor` builder needs a **`VirtualMachineImage`** in the
-Supervisor namespace's content library to deploy from. Because Oracle does
-not publish a first-party OL9 OVA for vSphere, this repo uses a **custom
-ISO with a kickstart baked in**:
+## How it works
 
 ```
-Oracle Linux 9 DVD ISO  ──►  scripts/remaster-iso.sh  ──►  custom ISO in content library
-                                                               │
-                                                          packer build
-                                                               │
-                                                        Anaconda installs OL9
-                                                        (kickstart, unattended)
-                                                               │
-                                                         VM reboots → SSH ready
-                                                               │
-                                                      Packer runs provisioners
-                                                               │
-                                                    VirtualMachinePublishRequest
-                                                               │
-                                                           OVF in library
+Oracle Linux 9 DVD ISO
+        │
+   (cached in .cache/ — skipped when SHA-256 matches)
+        │
+scripts/remaster-iso.sh  ←── kickstart rendered from data/ks.cfg.tpl
+        │
+  .build/oraclelinux-9-ks.iso
+        │
+  host at a URL reachable by the Supervisor cluster
+        │
+  packer build  (vsphere-supervisor)
+        │
+  ContentLibraryItemImportRequest  ── imports ISO into content library
+        │
+  VirtualMachine created, boots from ISO
+        │
+  Anaconda runs kickstart (unattended OL9 install + build user + SSH)
+        │
+  VM reboots → SSH ready
+        │
+  Packer provisioners run (dnf update, build info stamp, …)
+        │
+  VirtualMachinePublishRequest
+        │
+  OVF template in content library  ──► downloadable as OVA
 ```
 
-### Step 1 — Find your writable content library
+## Quickstart
 
-Each Supervisor namespace binds to one or more `ContentLibrary` objects.
-Find them with:
+### 1 — Copy and edit the variables file
 
 ```sh
-kubectl get contentlibrary -n <your-namespace>
+cp builds/linux/oracle/9/linux-oracle.pkrvars.hcl.example \
+   builds/linux/oracle/9/linux-oracle.pkrvars.hcl
 ```
 
-You need one that is **writable** from the namespace (check
-`spec.writable: true` in the output). That library name goes into two
-places:
-- `GOVC_LIBRARY` in the remaster script (upload destination for the custom ISO)
-- `publish_location_name` in your `*.pkrvars.hcl` (publish destination for the final image)
+Open `linux-oracle.pkrvars.hcl` and set at minimum:
 
-### Step 2 — Get the Oracle Linux 9 ISO URL
+| Variable                    | Notes                                                              |
+| --------------------------- | ------------------------------------------------------------------ |
+| `source_iso_url`            | URL of the upstream OL9 DVD ISO (see [Finding the ISO](#finding-the-iso)) |
+| `source_iso_sha256`         | SHA-256 of the ISO (optional but recommended)                      |
+| `supervisor_namespace`      | Your Supervisor namespace name                                     |
+| `image_name`                | Must match `import_target_image_name`                              |
+| `import_target_location_name` | Writable content library for the ISO import                      |
+| `import_target_image_name`  | Name for the imported ISO library item                             |
+| `import_source_url`         | URL where you host `.build/oraclelinux-9-ks.iso` (see [Hosting the ISO](#hosting-the-iso)) |
+| `class_name`                | VirtualMachineClass name                                           |
+| `storage_class`             | StorageClass name                                                  |
+| `publish_location_name`     | Target content library for the finished image                      |
+| `build_username`            | Build user created by the kickstart                                |
+| `build_password`            | Plaintext — used by Packer SSH                                     |
+| `build_password_encrypted`  | SHA-512 hash — baked into the kickstart                            |
 
-Browse [yum.oracle.com / Oracle Linux ISOs](https://yum.oracle.com/oracle-linux-isos.html)
-for the most recent OL9 x86_64 DVD.  As of this writing the latest is
-Update 7:
-
-```
-https://yum.oracle.com/ISOS/OracleLinux/OL9/u7/x86_64/OracleLinux-R9-U7-x86_64-dvd.iso
-```
-
-Copy the matching SHA-256 from that page — you can pass it to the
-remaster script for verification.
-
-### Step 3 — Run `scripts/remaster-iso.sh`
-
-The script is generic — it takes any RHEL-family install ISO, injects a
-rendered kickstart, patches the EFI and BIOS bootloaders, and writes a
-custom ISO file. It does **not** upload to vSphere; Packer handles that
-via `import_source_url` in the next step.
-
-**Required tools** (`brew install xorriso gettext && brew link --force gettext`):
-`curl`, `xorriso`, `envsubst`
+### 2 — Point Packer at your kubeconfig
 
 ```sh
-# Kickstart credentials — must match build_* in your *.pkrvars.hcl
-export BUILD_USERNAME="packer"
-export BUILD_PASSWORD_ENCRYPTED='$6$rounds=4096$...'   # from: mkpasswd -m sha-512
-export BUILD_PUBLIC_KEY=""          # optional SSH public key
-
-# Guest locale baked into the kickstart
-export VM_GUEST_OS_LANGUAGE="en_US"
-export VM_GUEST_OS_KEYBOARD="us"
-export VM_GUEST_OS_TIMEZONE="UTC"
-
-# Source ISO
-export SOURCE_ISO_URL="https://yum.oracle.com/ISOS/OracleLinux/OL9/u7/x86_64/OracleLinux-R9-U7-x86_64-dvd.iso"
-export SOURCE_ISO_SHA256="<sha256-from-yum.oracle.com>"  # leave empty to skip
-
-# Path to the kickstart template for this build
-export KS_FILE="builds/linux/oracle/9/data/ks.cfg.tpl"
-
-# Where to write the remastered ISO (defaults to .build/<iso-name>-ks.iso)
-export OUTPUT_ISO=".build/oraclelinux-9-ks.iso"
-
-./scripts/remaster-iso.sh
+export KUBECONFIG=$HOME/.kube/config
 ```
 
-The downloaded vendor ISO is cached in `.cache/` — re-runs skip the download.
+Or set `kubeconfig_path` in the vars file.
 
-### Step 4 — Host the custom ISO and configure `import_source_url`
+### 3 — Build the remastered ISO
 
-Packer's `vsphere-supervisor` builder will fetch the ISO and import it into
-the content library automatically using `import_source_url`. That URL must
-be reachable by the **Supervisor cluster** (not just the Packer host).
-
-Host `.build/oraclelinux-9-ks.iso` somewhere the cluster can reach — an
-internal web server, an S3 bucket, etc. — then set these vars in your
-`linux-oracle.pkrvars.hcl`:
-
-```hcl
-import_source_url           = "https://your-server.example.com/isos/oraclelinux-9-ks.iso"
-import_target_location_name = "oracle-linux-source"   # writable ContentLibrary name
-import_target_image_type    = "iso"
-import_target_image_name    = "oraclelinux-9-ks"
-image_name                  = "oraclelinux-9-ks"      # must match import_target_image_name
+```sh
+make remaster
 ```
 
-On first run Packer creates a `ContentLibraryItemImportRequest` in your
-namespace and waits for it to complete before deploying the source VM. On
-subsequent runs with `clean_imported_image = false` the import is skipped
-if the item already exists and `import_source_url` can be left empty (set
-only `image_name`).
+This runs `scripts/remaster-iso.sh` via Packer's `null` builder + `shell-local`
+provisioner.  The vendor ISO is downloaded once and cached in `.cache/`.  On
+subsequent runs the cache is validated against `source_iso_sha256` — the
+download is skipped when the checksum matches and automatically re-triggered on
+mismatch (or when `source_iso_sha256` is unset).
 
-### Step 5 — Verify the image is visible to your namespace
+The remastered ISO is written to `.build/oraclelinux-9-ks.iso`.
 
-After the first `packer build` completes the import step:
+### 4 — Host the custom ISO {#hosting-the-iso}
+
+The Supervisor cluster (not just the Packer host) must be able to fetch the
+ISO. Serve `.build/oraclelinux-9-ks.iso` from an internal web server, object
+storage bucket, or any HTTPS endpoint the cluster can reach, then set
+`import_source_url` in your vars file to that URL.
+
+### 5 — Run the full build
+
+```sh
+make build
+```
+
+Or build both stages in one command:
+
+```sh
+make all   # runs: make remaster && make build
+```
+
+What happens during `make build`:
+
+1. Packer validates the plugin (`packer init`).
+2. The builder submits a `ContentLibraryItemImportRequest` in your namespace
+   to import the ISO from `import_source_url` into the content library.
+3. A `VirtualMachine` is created booting from the imported ISO.
+4. Anaconda runs the embedded kickstart — installs OL9, creates the build user
+   with the encrypted password and optional SSH key, enables SSH.
+5. The VM reboots; Packer waits up to `watch_source_timeout_sec` for SSH.
+6. Provisioners run (`dnf update`, write `/etc/vm-build-info`, …).
+7. A `VirtualMachinePublishRequest` publishes the VM to `publish_location_name`
+   as an OVF template.
+
+### 6 — Verify the source image (first run only)
+
+After the first build's import step completes:
 
 ```sh
 kubectl get virtualmachineimage -n <your-namespace>
 ```
 
-You should see an entry matching `import_target_image_name`.
+You should see an entry matching `import_target_image_name`. On subsequent runs
+with `clean_imported_image = false` Packer skips the import when the item
+already exists — you can then leave `import_source_url` empty and set only
+`image_name`.
 
-### Updating to a newer Oracle Linux 9 release
+## Finding the ISO
 
-Update `SOURCE_ISO_URL` and `SOURCE_ISO_SHA256`, re-run
-`scripts/remaster-iso.sh`, re-host the new ISO, update
-`import_source_url`, and run `packer build`.
+Browse [yum.oracle.com — Oracle Linux ISOs](https://yum.oracle.com/oracle-linux-isos.html)
+for the latest OL9 x86_64 DVD ISO and its SHA-256.  Set both in your vars file:
 
-## Usage
-
-1. **Clone and enter the build directory:**
-
-   ```sh
-   cd builds/linux/oracle/9
-   ```
-
-2. **Copy the example variables file and edit it:**
-
-   ```sh
-   cp linux-oracle.pkrvars.hcl.example linux-oracle.pkrvars.hcl
-   ```
-
-   Open `linux-oracle.pkrvars.hcl` and set at least:
-   - `supervisor_namespace`
-   - `image_name` (the source `VirtualMachineImage`)
-   - `class_name` (a `VirtualMachineClass`)
-   - `storage_class` (a `StorageClass`)
-   - `publish_location_name` (a content library to publish to)
-   - `build_username` / `build_password` / `build_password_encrypted`
-
-3. **Point Packer at your kubeconfig:**
-
-   Either set `kubeconfig_path` in the vars file, or:
-
-   ```sh
-   export KUBECONFIG=$HOME/.kube/config
-   ```
-
-   The current context's namespace will be used if `supervisor_namespace`
-   is left empty.
-
-4. **Initialize plugins:**
-
-   ```sh
-   packer init .
-   ```
-
-5. **Validate:**
-
-   ```sh
-   packer validate -var-file=linux-oracle.pkrvars.hcl .
-   ```
-
-6. **Build:**
-
-   ```sh
-   packer build -var-file=linux-oracle.pkrvars.hcl .
-   ```
-
-   What happens during the build:
-   1. Packer renders `data/cloud-init.pkrtpl.hcl` to a local file under
-      `.bootstrap/`.
-   2. The builder creates a `VirtualMachine` in your Supervisor namespace
-      using `image_name`, `class_name`, and `storage_class`, attaching the
-      cloud-init bootstrap data.
-   3. cloud-init creates the build user, sets the SSH key/password, and
-      installs `open-vm-tools`.
-   4. Packer SSHes into the VM and runs the provisioners (a `dnf update`
-      and a `vm-build-info` stamp by default — replace these with your own).
-   5. The customized VM is published to `publish_location_name` as an OVF
-      template. You can then download it from that content library as an
-      OVA via the vSphere Client or `govc`.
+```hcl
+source_iso_url    = "https://yum.oracle.com/ISOS/OracleLinux/OL9/u5/x86_64/OracleLinux-R9-U5-x86_64-dvd.iso"
+source_iso_sha256 = "<sha256-from-the-page>"
+```
 
 ## Getting an OVA out
 
-The `vsphere-supervisor` builder publishes the resulting image into a
-content library; it does not write an OVA file to your local disk
-directly. To get an OVA on disk, download the published item from the
-target content library, e.g. with `govc`:
+The builder publishes to a content library — it does not write an OVA file
+locally. Download the published item with `govc`:
 
 ```sh
-govc library.export "/<library-name>/<published-image-name>" ./oraclelinux-9.ova
+govc library.export "/<publish_location_name>/<published-image-name>" ./oraclelinux-9.ova
 ```
 
-(Replace `<library-name>` with your `publish_location_name` and
-`<published-image-name>` with the value of `publish_image_name` —
-or the auto-generated name printed at the end of the build.)
+`published-image-name` is `publish_image_name` from your vars file, or the
+auto-generated name printed at the end of the build.
 
-## Customizing what gets installed
+## Customizing the build
 
-- **cloud-init seed:** edit `data/cloud-init.pkrtpl.hcl`. This is what
-  shapes the source VM at first boot (user, SSH key, packages,
-  hostname, locale).
+- **Kickstart:** edit `builds/linux/oracle/9/data/ks.cfg.tpl`. Variables
+  substituted at remaster time: `BUILD_USERNAME`, `BUILD_PASSWORD_ENCRYPTED`,
+  `BUILD_PUBLIC_KEY`, `VM_GUEST_OS_LANGUAGE`, `VM_GUEST_OS_KEYBOARD`,
+  `VM_GUEST_OS_TIMEZONE`. Run `make remaster` after changes.
 - **In-guest provisioning:** edit the `provisioner "shell"` block in
-  `linux-oracle.pkr.hcl`. To use Ansible instead, replace it with a
-  `provisioner "ansible"` block — the upstream
-  [example's `ansible/`](https://github.com/vmware/packer-examples-for-vsphere/tree/develop/ansible)
-  directory drops in unchanged.
-- **Extra packages:** add to `additional_packages` in your
-  `*.pkrvars.hcl` file. They are appended to the cloud-init `packages`
-  list.
+  `linux-oracle.pkr.hcl`. Replace or extend with Ansible, file, or other
+  provisioner blocks.
+
+## Updating to a newer Oracle Linux 9 release
+
+1. Update `source_iso_url` and `source_iso_sha256` in your vars file.
+2. Run `make remaster` — the cached ISO is replaced when the checksum changes.
+3. Re-host `.build/oraclelinux-9-ks.iso` (if the path/URL changed, update `import_source_url`).
+4. Run `make build`.
+
+## Makefile targets
+
+| Target         | What it does                                                    |
+| -------------- | --------------------------------------------------------------- |
+| `make init`    | `packer init` — downloads plugins                               |
+| `make remaster`| Builds the remastered ISO via the `remaster-iso` packer build   |
+| `make build`   | Runs the `vsphere-supervisor` packer build                      |
+| `make all`     | `make remaster` then `make build`                               |
+| `make clean`   | Removes `.cache/` and `.build/`                                 |
+
+The default `VAR_FILE` is `builds/linux/oracle/9/linux-oracle.pkrvars.hcl`.
+Override with `make build VAR_FILE=path/to/other.pkrvars.hcl`.
 
 ## Variable reference
 
-See `builds/linux/oracle/9/variables.pkr.hcl` for the full set, with
-descriptions. The most important ones:
+See `builds/linux/oracle/9/variables.pkr.hcl` for the full set with
+descriptions. Key variables:
 
-| Variable                  | Required | Notes                                                                  |
-| ------------------------- | :------: | ---------------------------------------------------------------------- |
-| `supervisor_namespace`    | (1)      | Falls back to current kubeconfig context's namespace                   |
-| `kubeconfig_path`         | no       | Falls back to `$KUBECONFIG`, then `$HOME/.kube/config`                 |
-| `image_name`              | yes      | Source `VirtualMachineImage` name                                      |
-| `class_name`              | yes      | `VirtualMachineClass` name                                             |
-| `storage_class`           | yes      | `StorageClass` name                                                    |
-| `publish_location_name`   | (2)      | Target ContentLibrary; leave empty to skip publishing                  |
-| `bootstrap_provider`      | no       | `CloudInit` (default), `Sysprep`, or `vAppConfig`                      |
-| `build_username`          | yes      | Created by cloud-init; used for SSH                                    |
-| `build_password`          | yes      | Plaintext, used for SSH                                                |
-| `build_password_encrypted`| yes      | SHA-512 hash, seeded into cloud-init                                   |
+| Variable                    | Required | Notes                                                           |
+| --------------------------- | :------: | --------------------------------------------------------------- |
+| `source_iso_url`            | yes      | Upstream OL9 DVD ISO URL; passed to `remaster-iso.sh`          |
+| `source_iso_sha256`         | no       | Expected SHA-256; enables smart cache validation                |
+| `supervisor_namespace`      | (1)      | Falls back to current kubeconfig context's namespace            |
+| `kubeconfig_path`           | no       | Falls back to `$KUBECONFIG`, then `$HOME/.kube/config`          |
+| `image_name`                | yes      | Source `VirtualMachineImage` name (match `import_target_image_name`) |
+| `class_name`                | yes      | `VirtualMachineClass` name                                      |
+| `storage_class`             | yes      | `StorageClass` name                                             |
+| `import_source_url`         | (2)      | URL serving the remastered ISO; leave empty after first import  |
+| `import_target_location_name` | (2)   | Writable ContentLibrary for ISO import                          |
+| `import_target_image_name`  | (2)      | Name for the imported ISO item                                  |
+| `publish_location_name`     | (3)      | Target ContentLibrary for the finished image; skip if empty     |
+| `build_username`            | yes      | Created by kickstart; used for SSH                              |
+| `build_password`            | yes      | Plaintext — used by Packer SSH                                  |
+| `build_password_encrypted`  | yes      | SHA-512 hash — baked into the kickstart                         |
+| `build_key`                 | no       | SSH public key injected into the kickstart                      |
+| `watch_source_timeout_sec`  | no       | Seconds to wait for SSH (ISO boot + install + reboot; default 3600) |
 
-(1) Optional only if your kubeconfig context already targets the right
-namespace. (2) Required to actually publish the resulting image.
+(1) Optional only if your kubeconfig context already targets the right namespace.
+(2) Required on first run; leave empty once the image is in the library.
+(3) Required to publish the finished image.
 
 ## Troubleshooting
 
-- **`packer validate` complains about an unknown plugin or builder:**
-  run `packer init .` first.
+- **`packer validate` complains about an unknown plugin:** run `make init` first.
 - **Build times out waiting for the source VM:** check
-  `kubectl describe vm -n <namespace> <source_name>`. Common causes are
-  invalid `class_name`, `storage_class`, or `image_name` values.
-- **Packer cannot SSH:** the Supervisor namespace network must be
-  reachable from where Packer runs. Verify with
+  `kubectl describe vm -n <namespace> <source_name>`. Common causes: invalid
+  `class_name`, `storage_class`, or `image_name`; ISO import not yet complete.
+- **Packer cannot SSH:** the Supervisor namespace network must be reachable
+  from the Packer host. Check the VM IP with
   `kubectl get vm -n <namespace> <source_name> -o jsonpath='{.status.network.primaryIP4}'`
-  and try to SSH from the same host.
-- **cloud-init didn't apply your config:** confirm the source image
-  ships with cloud-init enabled (most cloud images do; some "OVA from
-  ISO install" images do not). Check
-  `/var/log/cloud-init.log` on the source VM.
-- **Publishing fails:** the namespace must be permitted to publish to
-  the named content library. Check
-  `kubectl describe contentlibrary` and the namespace's
-  `ContentSourceBinding` / library publish permissions in vSphere.
+  and try to SSH manually.
+- **Anaconda fails or VM reboots without installing:** the kickstart may have
+  an error. Attach to the VM console in vSphere Client and check the Anaconda
+  log or the error screen.
+- **SSH credentials rejected:** `build_password` and `build_password_encrypted`
+  must be consistent (same password, different forms). Regenerate with
+  `mkpasswd -m sha-512` and update both vars, then re-run `make remaster`.
+- **Import times out:** increase `watch_import_timeout_sec`. Large ISOs over a
+  slow link may need several minutes.
+- **Publishing fails:** the namespace must have publish permission on the target
+  content library. Check `kubectl describe contentlibrary` and the library
+  publish permissions in vSphere.
 
 ## References
 
