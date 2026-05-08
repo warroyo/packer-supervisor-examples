@@ -5,9 +5,10 @@
 
     Copy to linux-oracle.pkrvars.hcl and edit before running.
 
-    Prerequisites: run scripts/remaster-iso.sh first to build and upload the
-    custom Oracle Linux 9 ISO with the kickstart baked in.  Set image_name
-    below to match the CUSTOM_ISO_NAME used in that script.
+    Prerequisites: run `make remaster` to build the custom ISO, then either:
+      - `make upload` to push it to the content library via govc (recommended), or
+      - host it at a URL reachable by the Supervisor cluster and set import_source_url.
+    Then run `make build` (or `make all-local` / `make all-url` for a single command).
 */
 
 // Source ISO (remaster-iso build stage)
@@ -23,12 +24,19 @@ source_iso_sha256 = ""
 kubeconfig_path      = ""
 supervisor_namespace = "wcp-oracle-build"
 
-// Source Image Import (Packer-driven)
-//   After running scripts/remaster-iso.sh, host the output ISO at a URL
-//   reachable by the Supervisor cluster and set import_source_url below.
-//   Packer creates a ContentLibraryItemImportRequest for you.
-//   Leave import_source_url empty if the ISO is already in the library.
-import_source_url           = "https://your-server.example.com/isos/oraclelinux-9-ks.iso"
+// Source Image Import
+//   Two paths for getting the remastered ISO into the content library:
+//
+//   A) govc upload (recommended — run `make upload`):
+//      Leave import_source_url empty. The Makefile uploads .build/oraclelinux-9-ks.iso
+//      directly using `govc library.import`. Packer skips the import step and uses
+//      the already-present library item via image_name.
+//
+//   B) Hosted URL (run `make all-url`):
+//      Set import_source_url to an HTTPS endpoint reachable by the Supervisor
+//      cluster. Packer will submit a ContentLibraryItemImportRequest on first run.
+//
+import_source_url           = ""
 import_target_location_name = "oracle-linux-source"
 import_target_image_type    = "iso"
 import_target_image_name    = "oraclelinux-9-ks"

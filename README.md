@@ -121,9 +121,8 @@ Open `linux-oracle.pkrvars.hcl` and set at minimum:
 | `source_iso_sha256`         | SHA-256 of the ISO (optional but recommended)                      |
 | `supervisor_namespace`      | Your Supervisor namespace name                                     |
 | `image_name`                | Must match `import_target_image_name`                              |
-| `import_target_location_name` | Writable content library for the ISO import                      |
-| `import_target_image_name`  | Name for the imported ISO library item                             |
-| `import_source_url`         | URL where you host `.build/oraclelinux-9-ks.iso` (see [Hosting the ISO](#hosting-the-iso)) |
+| `import_target_location_name` | Writable content library (used by both import paths)             |
+| `import_target_image_name`  | Name for the ISO library item                                      |
 | `class_name`                | VirtualMachineClass name                                           |
 | `storage_class`             | StorageClass name                                                  |
 | `publish_location_name`     | Target content library for the finished image                      |
@@ -146,38 +145,67 @@ make remaster
 ```
 
 This runs `scripts/remaster-iso.sh` via Packer's `null` builder + `shell-local`
-provisioner.  The vendor ISO is downloaded once and cached in `.cache/`.  On
+provisioner. The vendor ISO is downloaded once and cached in `.cache/`. On
 subsequent runs the cache is validated against `source_iso_sha256` — the
 download is skipped when the checksum matches and automatically re-triggered on
 mismatch (or when `source_iso_sha256` is unset).
 
-The remastered ISO is written to `.build/oraclelinux-9-ks.iso`.
+The remastered ISO is always written to `.build/oraclelinux-9-ks.iso`.
 
-### 4 — Host the custom ISO {#hosting-the-iso}
+### 4 — Get the ISO into the content library
 
-The Supervisor cluster (not just the Packer host) must be able to fetch the
-ISO. Serve `.build/oraclelinux-9-ks.iso` from an internal web server, object
-storage bucket, or any HTTPS endpoint the cluster can reach, then set
-`import_source_url` in your vars file to that URL.
+Two paths are supported. Choose one:
+
+#### Option A — Upload locally with govc (recommended)
+
+Upload `.build/oraclelinux-9-ks.iso` directly to the content library from
+your machine. No external web server needed.
+
+```sh
+export GOVC_URL=https://vcenter.example.com
+export GOVC_USERNAME=administrator@vsphere.local
+export GOVC_PASSWORD=...
+export GOVC_INSECURE=true   # if using a self-signed cert
+
+make upload   # calls: govc library.import -n <import_target_image_name> <import_target_location_name> .build/oraclelinux-9-ks.iso
+```
+
+Then set `import_source_url = ""` in your vars file (leave it empty). Packer
+will skip the import step and use the already-present library item via
+`image_name`.
+
+#### Option B — Import from a hosted URL
+
+Host `.build/oraclelinux-9-ks.iso` at an HTTPS endpoint reachable by the
+**Supervisor cluster** (not just the Packer host), then set in your vars file:
+
+```hcl
+import_source_url = "https://your-server.example.com/isos/oraclelinux-9-ks.iso"
+```
+
+Packer will submit a `ContentLibraryItemImportRequest` on first run and wait
+for the cluster to pull the ISO in.
 
 ### 5 — Run the full build
 
 ```sh
+# Option A — local upload:
+make all-local   # make remaster → make upload → make build
+
+# Option B — hosted URL import:
+make all-url     # make remaster → make build (Packer imports from import_source_url)
+
+# Or run stages separately:
 make build
-```
-
-Or build both stages in one command:
-
-```sh
-make all   # runs: make remaster && make build
 ```
 
 What happens during `make build`:
 
 1. Packer validates the plugin (`packer init`).
-2. The builder submits a `ContentLibraryItemImportRequest` in your namespace
-   to import the ISO from `import_source_url` into the content library.
-3. A `VirtualMachine` is created booting from the imported ISO.
+2. **If `import_source_url` is set:** the builder submits a
+   `ContentLibraryItemImportRequest` and waits for the cluster to pull the ISO.
+   **If empty:** this step is skipped; the ISO must already be in the library.
+3. A `VirtualMachine` is created booting from the ISO library item.
 4. Anaconda runs the embedded kickstart — installs OL9, creates the build user
    with the encrypted password and optional SSH key, enables SSH.
 5. The VM reboots; Packer waits up to `watch_source_timeout_sec` for SSH.
@@ -187,16 +215,13 @@ What happens during `make build`:
 
 ### 6 — Verify the source image (first run only)
 
-After the first build's import step completes:
-
 ```sh
 kubectl get virtualmachineimage -n <your-namespace>
 ```
 
-You should see an entry matching `import_target_image_name`. On subsequent runs
-with `clean_imported_image = false` Packer skips the import when the item
-already exists — you can then leave `import_source_url` empty and set only
-`image_name`.
+You should see an entry matching `import_target_image_name`. On subsequent
+runs the ISO item is already in the library — leave `import_source_url` empty
+and use only `image_name` to skip re-importing.
 
 ## Finding the ISO
 
@@ -239,16 +264,22 @@ auto-generated name printed at the end of the build.
 
 ## Makefile targets
 
-| Target         | What it does                                                    |
-| -------------- | --------------------------------------------------------------- |
-| `make init`    | `packer init` — downloads plugins                               |
-| `make remaster`| Builds the remastered ISO via the `remaster-iso` packer build   |
-| `make build`   | Runs the `vsphere-supervisor` packer build                      |
-| `make all`     | `make remaster` then `make build`                               |
-| `make clean`   | Removes `.cache/` and `.build/`                                 |
+| Target          | What it does                                                            |
+| --------------- | ----------------------------------------------------------------------- |
+| `make init`     | `packer init` — downloads plugins                                       |
+| `make remaster` | Builds the remastered ISO (downloads vendor ISO if cache miss)          |
+| `make upload`   | Uploads `.build/oraclelinux-9-ks.iso` to the content library via govc  |
+| `make build`    | Runs the `vsphere-supervisor` packer build                              |
+| `make all-local`| `make upload` then `make build` (govc upload path)                     |
+| `make all-url`  | `make remaster` then `make build` (hosted URL import path)              |
+| `make clean`    | Removes `.cache/` and `.build/`                                         |
 
 The default `VAR_FILE` is `builds/linux/oracle/9/linux-oracle.pkrvars.hcl`.
-Override with `make build VAR_FILE=path/to/other.pkrvars.hcl`.
+Override on the command line: `make build VAR_FILE=path/to/other.pkrvars.hcl`.
+
+`make upload` reads `import_target_location_name` and `import_target_image_name`
+from the vars file automatically. Override with:
+`make upload IMPORT_LIBRARY=mylib IMPORT_IMAGE_NAME=myiso`.
 
 ## Variable reference
 
