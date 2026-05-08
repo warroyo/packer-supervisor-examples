@@ -1,0 +1,92 @@
+/*
+    DESCRIPTION:
+    Oracle Linux 9 build variables (example).
+    Packer Plugin for VMware vSphere: 'vsphere-supervisor' builder.
+
+    Copy to linux-oracle.pkrvars.hcl and edit before running.
+
+    Prerequisites: run scripts/remaster-iso.sh first to build and upload the
+    custom Oracle Linux 9 ISO with the kickstart baked in.  Set image_name
+    below to match the CUSTOM_ISO_NAME used in that script.
+*/
+
+// Source ISO (remaster-iso build stage)
+//   source_iso_sha256 is optional but recommended — the cache is reused when
+//   the checksum matches and re-downloaded automatically on mismatch.
+source_iso_url    = "https://yum.oracle.com/ISOS/OracleLinux/OL9/u5/x86_64/OracleLinux-R9-U5-x86_64-dvd.iso"
+source_iso_sha256 = ""
+
+// Supervisor Connection
+//   Leave kubeconfig_path / supervisor_namespace empty to use the
+//   KUBECONFIG environment variable (or $HOME/.kube/config) and the
+//   namespace of the current kubeconfig context.
+kubeconfig_path      = ""
+supervisor_namespace = "wcp-oracle-build"
+
+// Source Image Import (Packer-driven)
+//   After running scripts/remaster-iso.sh, host the output ISO at a URL
+//   reachable by the Supervisor cluster and set import_source_url below.
+//   Packer creates a ContentLibraryItemImportRequest for you.
+//   Leave import_source_url empty if the ISO is already in the library.
+import_source_url           = "https://your-server.example.com/isos/oraclelinux-9-ks.iso"
+import_target_location_name = "oracle-linux-source"
+import_target_image_type    = "iso"
+import_target_image_name    = "oraclelinux-9-ks"
+watch_import_timeout_sec    = 1800
+clean_imported_image        = false
+keep_import_request         = false
+
+// Source VM Image
+//   Must match import_target_image_name above.
+//   Verify visibility after first build with:
+//     kubectl get virtualmachineimage -n <namespace>
+image_name = "oraclelinux-9-ks"
+
+// VM Class and Storage Class
+//   Run:
+//     kubectl get virtualmachineclass
+//     kubectl get storageclass
+class_name    = "best-effort-medium"
+storage_class = "wcp-storage-policy"
+
+// Source VM hardware
+//   iso_boot_disk_size is the PVC allocated for the OS install.
+//   watch_source_timeout_sec must cover ISO boot + Anaconda install + reboot.
+guest_os_type            = "oracleLinux9_64Guest"
+iso_boot_disk_size       = "40Gi"
+watch_source_timeout_sec = 3600
+
+// Source VM lifecycle
+keep_input_artifact = false
+
+// Publishing the customized image back to a content library.
+//   The published item appears as an OVF template that can be downloaded
+//   as an OVA via the vSphere Client or `govc library.export`.
+publish_location_name     = "oracle-linux-published"
+publish_image_name        = ""
+watch_publish_timeout_sec = 1800
+
+// Guest Operating System Metadata (naming only)
+vm_guest_os_family  = "linux"
+vm_guest_os_name    = "oracle"
+vm_guest_os_version = "9"
+
+// Build credentials
+//   Must match BUILD_USERNAME, BUILD_PASSWORD, and BUILD_PASSWORD_ENCRYPTED
+//   used when running scripts/remaster-iso.sh.
+//   Prefer setting sensitive values via environment variables:
+//     export PKR_VAR_build_password="..."
+//     export PKR_VAR_build_password_encrypted='$6$...'
+build_username           = "packer"
+build_password           = "VMware1!"
+build_password_encrypted = "$6$rounds=4096$REPLACEME$REPLACEME"
+build_key                = ""
+
+// SSH
+communicator_port    = 22
+communicator_timeout = "60m"
+
+// Guest OS locale (used in kickstart — must match what was baked into the ISO)
+vm_guest_os_language = "en_US"
+vm_guest_os_keyboard = "us"
+vm_guest_os_timezone = "UTC"
