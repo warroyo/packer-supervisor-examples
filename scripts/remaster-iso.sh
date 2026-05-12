@@ -134,25 +134,27 @@ iso_extract_file() {
 }
 
 patch_grub_cfg() {
-  local f="$1"
-  [[ -f "${f}" ]] || return 1
-  log "Patching EFI grub.cfg ..."
-  perl -pi -e '
-    s|(linuxefi\s+/images/pxeboot/vmlinuz\b[^\n]*?)(\s*\n)|$1 inst.ks=cdrom:/ks.cfg inst.text inst.cmdline$2|;
+    local f="$1"
+    [[ -f "${f}" ]] || return 1
+    log "Patching EFI grub.cfg ..."
+    perl -pi -e '
+    s|(linuxefi\s+/images/pxeboot/vmlinuz\b[^\n]*)(\s*\n)|$1 inst.ks=cdrom:/ks.cfg inst.text inst.cmdline$2|;
+    s/\s*rd\.live\.check//g;
     s/^set timeout=\d+/set timeout=1/;
-  ' "${f}"
+    s/^set default="1"/set default="0"/;
+    ' "${f}"
 }
 
 patch_isolinux_cfg() {
-  local f="$1"
-  [[ -f "${f}" ]] || return 1
-  log "Patching BIOS isolinux.cfg ..."
-  perl -pi -e '
-    s|(^\s*append\b[^\n]*?initrd=initrd\.img\b[^\n]*?)(\s*\n)|$1 inst.ks=cdrom:/ks.cfg inst.text$2|;
+    local f="$1"
+    [[ -f "${f}" ]] || return 1
+    log "Patching BIOS isolinux.cfg ..."
+    perl -pi -e '
+    s|(^\s*append\b[^\n]*?initrd=initrd\.img\b[^\n]*)(\s*\n)|$1 inst.ks=cdrom:/ks.cfg inst.text$2|;
+    s/\s*rd\.live\.check//g;
     s/^timeout \d+/timeout 10/;
-  ' "${f}"
+    ' "${f}"
 }
-
 remaster() {
   local source_iso="$1" ks_file="$2" output_iso="$3"
   local patch_dir="${BUILD_DIR}/patches"
