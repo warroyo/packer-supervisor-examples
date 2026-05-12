@@ -33,7 +33,7 @@ build {
       "GOVC_INSECURE=${var.govc_insecure}",
       "IMPORT_LIBRARY=${var.import_target_location_name}",
       "IMPORT_IMAGE_NAME=${var.import_target_image_name}",
-      "LOCAL_ISO_PATH=${path.root}/../../../../.build/oraclelinux-9-ks.iso",
+      "LOCAL_ISO_PATH=${path.root}/../../../../.build/${var.import_target_image_name}.iso",
     ]
     inline = [
       "govc library.import -n \"$IMPORT_IMAGE_NAME\" \"$IMPORT_LIBRARY\" \"$LOCAL_ISO_PATH\""

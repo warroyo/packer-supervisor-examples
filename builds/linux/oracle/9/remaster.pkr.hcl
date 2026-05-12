@@ -31,7 +31,7 @@ build {
       "KS_FILE=${path.root}/data/ks.cfg.tpl",
       "CACHE_DIR=${path.root}/../../../../.cache",
       "BUILD_DIR=${path.root}/../../../../.build",
-      "OUTPUT_ISO=${path.root}/../../../../.build/oraclelinux-9-ks.iso",
+      "OUTPUT_ISO=${path.root}/../../../../.build/${var.import_target_image_name}.iso",
       "BUILD_USERNAME=${var.build_username}",
       "BUILD_PASSWORD_ENCRYPTED=${var.build_password_encrypted}",
       "BUILD_PUBLIC_KEY=${var.build_key}",
