@@ -16,7 +16,7 @@ remaster: init
 ## Upload the remastered ISO to the content library via govc.
 ## Set govc_url, govc_username, govc_password in the vars file.
 ## After first upload set import_source_url="" so Packer skips re-importing.
-upload: remaster
+upload: init
 	packer build \
 	  -only="upload-iso.null.upload" \
 	  -var-file=$(VAR_FILE) \
@@ -30,7 +30,7 @@ build: init
 	  $(PACKER_DIR)
 
 ## Full local-upload path: remaster → upload via govc → build.
-all-local: upload build
+all-local: remaster upload build
 
 ## Full URL-import path: remaster → build (Packer imports from import_source_url).
 all-url: remaster build

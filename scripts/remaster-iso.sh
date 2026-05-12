@@ -185,6 +185,9 @@ remaster() {
   fi
 
   # ── Build the modified ISO in a single pass ─────────────────────────────
+  # Remove any previous output so xorriso always writes a fresh file.
+  # xorriso errors when indev != outdev and the outdev already exists.
+  rm -f "${output_iso}"
   log "Building modified ISO → ${output_iso} ..."
   xorriso \
     -indev  "${source_iso}" \
