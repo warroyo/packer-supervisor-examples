@@ -161,16 +161,22 @@ Two paths are supported. Choose one:
 Upload `.build/oraclelinux-9-ks.iso` directly to the content library from
 your machine. No external web server needed.
 
-```sh
-export GOVC_URL=https://vcenter.example.com
-export GOVC_USERNAME=administrator@vsphere.local
-export GOVC_PASSWORD=...
-export GOVC_INSECURE=true   # if using a self-signed cert
+Set the govc connection vars in `linux-oracle.pkrvars.hcl`:
 
-make upload   # calls: govc library.import -n <import_target_image_name> <import_target_location_name> .build/oraclelinux-9-ks.iso
+```hcl
+govc_url      = "https://vcenter.example.com"
+govc_username = "administrator@vsphere.local"
+govc_password = ""      # or export PKR_VAR_govc_password="..."
+govc_insecure = false   # set true for self-signed certs
 ```
 
-Then set `import_source_url = ""` in your vars file (leave it empty). Packer
+Then run:
+
+```sh
+make upload   # runs the upload-iso packer build stage via govc library.import
+```
+
+After the first upload set `import_source_url = ""` in your vars file. Packer
 will skip the import step and use the already-present library item via
 `image_name`.
 
@@ -268,7 +274,7 @@ auto-generated name printed at the end of the build.
 | --------------- | ----------------------------------------------------------------------- |
 | `make init`     | `packer init` — downloads plugins                                       |
 | `make remaster` | Builds the remastered ISO (downloads vendor ISO if cache miss)          |
-| `make upload`   | Uploads `.build/oraclelinux-9-ks.iso` to the content library via govc  |
+| `make upload`   | Uploads `.build/oraclelinux-9-ks.iso` to the content library (packer + govc) |
 | `make build`    | Runs the `vsphere-supervisor` packer build                              |
 | `make all-local`| `make upload` then `make build` (govc upload path)                     |
 | `make all-url`  | `make remaster` then `make build` (hosted URL import path)              |

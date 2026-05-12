@@ -7,6 +7,35 @@
 //  BLOCK: variable
 //  Defines the input variables.
 
+// govc Connection (used by the upload-iso build stage)
+
+variable "govc_url" {
+  type        = string
+  description = "vCenter URL for govc (e.g. https://vcenter.example.com). Used by the upload-iso build stage."
+  default     = ""
+  sensitive   = true
+}
+
+variable "govc_username" {
+  type        = string
+  description = "vCenter username for govc."
+  default     = ""
+  sensitive   = true
+}
+
+variable "govc_password" {
+  type        = string
+  description = "vCenter password for govc."
+  default     = ""
+  sensitive   = true
+}
+
+variable "govc_insecure" {
+  type        = bool
+  description = "Skip TLS verification for the govc connection. Set to true when using a self-signed certificate."
+  default     = false
+}
+
 // Supervisor Connection
 
 variable "kubeconfig_path" {

@@ -1,12 +1,5 @@
-PACKER_DIR     := builds/linux/oracle/9
-VAR_FILE       := $(PACKER_DIR)/linux-oracle.pkrvars.hcl
-LOCAL_ISO_PATH := .build/oraclelinux-9-ks.iso
-
-# Read content-library values from the pkrvars file so the upload target
-# doesn't need them duplicated on the command line. Override with make
-# upload IMPORT_LIBRARY=mylib IMPORT_IMAGE_NAME=myiso if needed.
-IMPORT_LIBRARY    ?= $(shell grep 'import_target_location_name' $(VAR_FILE) 2>/dev/null | sed 's/.*= *"\(.*\)".*/\1/')
-IMPORT_IMAGE_NAME ?= $(shell grep 'import_target_image_name'    $(VAR_FILE) 2>/dev/null | sed 's/.*= *"\(.*\)".*/\1/')
+PACKER_DIR := builds/linux/oracle/9
+VAR_FILE   := $(PACKER_DIR)/linux-oracle.pkrvars.hcl
 
 .PHONY: init remaster upload build all-url all-local clean
 
@@ -20,15 +13,14 @@ remaster: init
 	  -var-file=$(VAR_FILE) \
 	  $(PACKER_DIR)
 
-## Upload the remastered ISO to the content library using govc.
-## Requires GOVC_URL, GOVC_USERNAME, GOVC_PASSWORD (and optionally GOVC_INSECURE=true).
-## After first upload: set import_source_url="" in your vars file so Packer
-## skips re-importing and uses the already-present library item via image_name.
+## Upload the remastered ISO to the content library via govc.
+## Set govc_url, govc_username, govc_password in the vars file.
+## After first upload set import_source_url="" so Packer skips re-importing.
 upload: remaster
-	@test -n "$(IMPORT_LIBRARY)"    || { echo "ERROR: import_target_location_name not set in $(VAR_FILE)"; exit 1; }
-	@test -n "$(IMPORT_IMAGE_NAME)" || { echo "ERROR: import_target_image_name not set in $(VAR_FILE)"; exit 1; }
-	@test -f "$(LOCAL_ISO_PATH)"    || { echo "ERROR: $(LOCAL_ISO_PATH) not found — run 'make remaster' first"; exit 1; }
-	govc library.import -n "$(IMPORT_IMAGE_NAME)" "$(IMPORT_LIBRARY)" "$(LOCAL_ISO_PATH)"
+	packer build \
+	  -only="upload-iso.null.upload" \
+	  -var-file=$(VAR_FILE) \
+	  $(PACKER_DIR)
 
 ## Run the vsphere-supervisor packer build.
 build: init
@@ -37,13 +29,11 @@ build: init
 	  -var-file=$(VAR_FILE) \
 	  $(PACKER_DIR)
 
-## Full URL-import path: remaster locally → host ISO externally → Packer imports from import_source_url.
-## Requires import_source_url to be set in the vars file.
-all-url: remaster build
-
-## Full local-upload path: remaster locally → upload via govc → Packer builds from the library item.
-## Requires GOVC_* env vars. Set import_source_url="" in vars file after first upload.
+## Full local-upload path: remaster → upload via govc → build.
 all-local: upload build
+
+## Full URL-import path: remaster → build (Packer imports from import_source_url).
+all-url: remaster build
 
 clean:
 	rm -rf .cache .build
