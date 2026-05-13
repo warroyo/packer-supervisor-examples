@@ -34,8 +34,10 @@ build {
       "IMPORT_LIBRARY=${var.import_target_location_name}",
       "IMPORT_IMAGE_NAME=${var.import_target_image_name}",
       "LOCAL_ISO_PATH=${path.root}/../../../../.build/${var.import_target_image_name}.iso",
+      "UPLOAD_OVERWRITE=${var.upload_overwrite}",
     ]
     inline = [
+      "if [ \"$UPLOAD_OVERWRITE\" = 'true' ]; then govc library.item.rm -l \"$IMPORT_LIBRARY\" \"$IMPORT_IMAGE_NAME\" 2>/dev/null || true; fi",
       "govc library.import -n \"$IMPORT_IMAGE_NAME\" \"$IMPORT_LIBRARY\" \"$LOCAL_ISO_PATH\""
     ]
   }

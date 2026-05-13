@@ -104,6 +104,46 @@ scripts/remaster-iso.sh  ←── kickstart rendered from data/ks.cfg.tpl
   OVF template in content library  ──► downloadable as OVA
 ```
 
+## Configuring a writable content library
+
+The Supervisor namespace must have at least one content library configured as
+writable before Packer or govc can import or publish images. This is a one-time
+setup step done with DCLI.
+
+### Find the content library ID
+
+```sh
+dcli +i
+```
+
+Inside the interactive session:
+
+```
+namespaces instances get --namespace <your-namespace>
+```
+
+Look for the `content_libraries` array in the output. Each entry has a
+`content_library` field — that value is the content library ID (a UUID).
+
+### Enable write access
+
+Still inside the DCLI interactive session, pass the ID from the previous step:
+
+```
+namespaces instances update --namespace <your-namespace> \
+  --content-libraries '[{"content_library": "<library-id>", "writable": true}]'
+```
+
+This updates the namespace binding for that library to allow write operations.
+Repeat for each library that needs to be writable (source ISO library and
+publish target library, if they differ).
+
+After this you can confirm the library is visible to the namespace with:
+
+```sh
+kubectl get contentlibrary -n <your-namespace>
+```
+
 ## Quickstart
 
 ### 1 — Copy and edit the variables file
@@ -120,12 +160,12 @@ Open `linux-oracle.pkrvars.hcl` and set at minimum:
 | `source_iso_url`            | URL of the upstream OL9 DVD ISO (see [Finding the ISO](#finding-the-iso)) |
 | `source_iso_sha256`         | SHA-256 of the ISO (optional but recommended)                      |
 | `supervisor_namespace`      | Your Supervisor namespace name                                     |
-| `image_name`                | Must match `import_target_image_name`                              |
+| `image_name`                | `VirtualMachineImage` resource name from `kubectl get virtualmachineimage` — differs from `import_target_image_name` |
 | `import_target_location_name` | Writable content library (used by both import paths)             |
-| `import_target_image_name`  | Name for the ISO library item                                      |
+| `import_target_image_name`  | Friendly label for the ISO in the content library (also sets `.build/<name>.iso`) |
 | `class_name`                | VirtualMachineClass name                                           |
 | `storage_class`             | StorageClass name                                                  |
-| `publish_location_name`     | Target content library for the finished image                      |
+| `publish_location_name`     | ContentLibrary CRD name (`cl-xxxx`) from `kubectl get contentlibrary -n <namespace>` — not the human-readable label |
 | `build_username`            | Build user created by the kickstart                                |
 | `build_password`            | Plaintext — used by Packer SSH                                     |
 | `build_password_encrypted`  | SHA-512 hash — baked into the kickstart                            |
@@ -219,15 +259,28 @@ What happens during `make build`:
 7. A `VirtualMachinePublishRequest` publishes the VM to `publish_location_name`
    as an OVF template.
 
-### 6 — Verify the source image (first run only)
+### 6 — Discover the VirtualMachineImage name and set `image_name`
+
+After the ISO is in the content library the Supervisor syncs it and creates a
+`VirtualMachineImage` resource in your namespace. The resource name assigned by
+the Supervisor is **not** the same as the `import_target_image_name` friendly
+label you gave the content library item — it is a separate identifier you must
+look up.
 
 ```sh
 kubectl get virtualmachineimage -n <your-namespace>
 ```
 
-You should see an entry matching `import_target_image_name`. On subsequent
-runs the ISO item is already in the library — leave `import_source_url` empty
-and use only `image_name` to skip re-importing.
+Find the entry that corresponds to the ISO you uploaded. Set its `NAME` value
+as `image_name` in your vars file:
+
+```hcl
+image_name = "<name-from-kubectl-output>"
+```
+
+This is a required step before running `make build`. The Supervisor builder
+uses `image_name` to locate the `VirtualMachineImage` resource, not the
+content library item label.
 
 ## Finding the ISO
 
@@ -245,11 +298,12 @@ The builder publishes to a content library — it does not write an OVA file
 locally. Download the published item with `govc`:
 
 ```sh
-govc library.export "/<publish_location_name>/<published-image-name>" ./oraclelinux-9.ova
+govc library.export "/<cl-xxxx>/<published-image-name>" ./oraclelinux-9.ova
 ```
 
-`published-image-name` is `publish_image_name` from your vars file, or the
-auto-generated name printed at the end of the build.
+`<cl-xxxx>` is the `publish_location_name` value (the ContentLibrary CRD name,
+not the human label). `published-image-name` is `publish_image_name` from your
+vars file, or the auto-generated name printed at the end of the build.
 
 ## Customizing the build
 
@@ -298,13 +352,13 @@ descriptions. Key variables:
 | `source_iso_sha256`         | no       | Expected SHA-256; enables smart cache validation                |
 | `supervisor_namespace`      | (1)      | Falls back to current kubeconfig context's namespace            |
 | `kubeconfig_path`           | no       | Falls back to `$KUBECONFIG`, then `$HOME/.kube/config`          |
-| `image_name`                | yes      | Source `VirtualMachineImage` name (match `import_target_image_name`) |
+| `image_name`                | yes      | `VirtualMachineImage` resource name from `kubectl get virtualmachineimage` — differs from `import_target_image_name` |
 | `class_name`                | yes      | `VirtualMachineClass` name                                      |
 | `storage_class`             | yes      | `StorageClass` name                                             |
 | `import_source_url`         | (2)      | URL serving the remastered ISO; leave empty after first import  |
 | `import_target_location_name` | (2)   | Writable ContentLibrary for ISO import                          |
-| `import_target_image_name`  | (2)      | Name for the imported ISO item                                  |
-| `publish_location_name`     | (3)      | Target ContentLibrary for the finished image; skip if empty     |
+| `import_target_image_name`  | (2)      | Friendly label for the ISO in the content library; also names `.build/<name>.iso` |
+| `publish_location_name`     | (3)      | ContentLibrary CRD name (`cl-xxxx`) from `kubectl get contentlibrary -n <namespace>`; leave empty to skip publishing |
 | `build_username`            | yes      | Created by kickstart; used for SSH                              |
 | `build_password`            | yes      | Plaintext — used by Packer SSH                                  |
 | `build_password_encrypted`  | yes      | SHA-512 hash — baked into the kickstart                         |

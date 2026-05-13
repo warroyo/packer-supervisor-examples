@@ -21,10 +21,11 @@ source_iso_sha256 = ""
 //   Used by `make upload` to push the remastered ISO into the content library.
 //   Prefer setting sensitive values via environment variables:
 //     export PKR_VAR_govc_password="..."
-govc_url      = "https://vcenter.example.com"
-govc_username = "administrator@vsphere.local"
-govc_password = ""
-govc_insecure = false
+govc_url         = "https://vcenter.example.com"
+govc_username    = "administrator@vsphere.local"
+govc_password    = ""
+govc_insecure    = false
+upload_overwrite = false   # set true to replace an existing library item
 
 // Supervisor Connection
 //   Leave kubeconfig_path / supervisor_namespace empty to use the
@@ -54,10 +55,13 @@ clean_imported_image        = false
 keep_import_request         = false
 
 // Source VM Image
-//   Must match import_target_image_name above.
-//   Verify visibility after first build with:
-//     kubectl get virtualmachineimage -n <namespace>
-image_name = "oraclelinux-9-ks"
+//   The VirtualMachineImage resource name assigned by the Supervisor — this is
+//   NOT the same as import_target_image_name (the content library friendly name).
+//   After running `make upload`, discover the correct value with:
+//     kubectl get virtualmachineimage -n <your-namespace>
+//   The name is typically assigned by the Supervisor and differs from the label
+//   you gave the content library item.
+image_name = ""
 
 // VM Class and Storage Class
 //   Run:
@@ -69,7 +73,7 @@ storage_class = "wcp-storage-policy"
 // Source VM hardware
 //   iso_boot_disk_size is the PVC allocated for the OS install.
 //   watch_source_timeout_sec must cover ISO boot + Anaconda install + reboot.
-guest_os_type            = "oracleLinux9_64Guest"
+guest_os_type            = "otherlinux64guest"
 iso_boot_disk_size       = "40Gi"
 watch_source_timeout_sec = 3600
 
@@ -79,7 +83,10 @@ keep_input_artifact = false
 // Publishing the customized image back to a content library.
 //   The published item appears as an OVF template that can be downloaded
 //   as an OVA via the vSphere Client or `govc library.export`.
-publish_location_name     = "oracle-linux-published"
+// publish_location_name is the ContentLibrary CRD name (cl-xxxx) from the Supervisor,
+// NOT the human-readable library label. Find it with:
+//   kubectl get contentlibrary -n <your-namespace>
+publish_location_name     = ""
 publish_image_name        = ""
 watch_publish_timeout_sec = 1800
 
@@ -96,7 +103,7 @@ vm_guest_os_version = "9"
 //     export PKR_VAR_build_password_encrypted='$6$...'
 build_username           = "packer"
 build_password           = "VMware1!"
-build_password_encrypted = "$6$rounds=4096$REPLACEME$REPLACEME"
+build_password_encrypted = "$6$eTPQ0ZoTtGVJLIsG$oy0/RpkPuxERn2v9tIZZlaCoel0ZFG3KwcqGnoCbOE/os0o77Dp7ENvK5r/NYQ.EYVvoRS91nqvZt4aNl1Ovn."
 build_key                = ""
 
 // SSH

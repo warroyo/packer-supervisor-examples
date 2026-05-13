@@ -36,6 +36,12 @@ variable "govc_insecure" {
   default     = false
 }
 
+variable "upload_overwrite" {
+  type        = bool
+  description = "Delete the existing content library item before uploading. Required when the item already exists and needs to be replaced."
+  default     = false
+}
+
 // Supervisor Connection
 
 variable "kubeconfig_path" {
@@ -67,7 +73,7 @@ variable "source_iso_sha256" {
 
 variable "image_name" {
   type        = string
-  description = "Name of the source VM image (VirtualMachineImage) available to the Supervisor namespace. This is the pre-built Oracle Linux 9 cloud image you have published to a content library that the Supervisor namespace consumes."
+  description = "Name of the VirtualMachineImage resource visible in the Supervisor namespace. This is NOT the friendly name given to the content library item — it is the resource name reported by `kubectl get virtualmachineimage -n <namespace>` after the ISO has been uploaded and the namespace has synced it."
 }
 
 variable "source_name" {
@@ -144,7 +150,7 @@ variable "import_target_image_type" {
 
 variable "import_target_image_name" {
   type        = string
-  description = "Name to assign to the imported image."
+  description = "Friendly name to assign to the item in the content library. Used by the remaster and upload stages to name the local ISO file (.build/<name>.iso) and the library item. This is distinct from image_name — after upload, check `kubectl get virtualmachineimage -n <namespace>` to find the resource name the Supervisor assigned."
   default     = ""
 }
 
@@ -176,7 +182,7 @@ variable "clean_imported_image" {
 
 variable "publish_location_name" {
   type        = string
-  description = "Target ContentLibrary name into which the customized image will be published. Leave empty to skip publishing."
+  description = "ContentLibrary CRD name (cl-xxxx form) from the Supervisor namespace into which the customized image will be published. This is NOT the human-readable library label — find it with `kubectl get contentlibrary -n <namespace>`. Leave empty to skip publishing."
   default     = ""
 }
 
