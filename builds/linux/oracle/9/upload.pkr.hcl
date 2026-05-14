@@ -37,7 +37,7 @@ build {
       "UPLOAD_OVERWRITE=${var.upload_overwrite}",
     ]
     inline = [
-      "if [ \"$UPLOAD_OVERWRITE\" = 'true' ]; then govc library.item.rm \"/$IMPORT_LIBRARY/$IMPORT_IMAGE_NAME\" || true; fi",
+      "if [ \"$UPLOAD_OVERWRITE\" = 'true' ]; then govc library.rm \"/$IMPORT_LIBRARY/$IMPORT_IMAGE_NAME\" || true; fi",
       "govc library.import -n \"$IMPORT_IMAGE_NAME\" \"$IMPORT_LIBRARY\" \"$LOCAL_ISO_PATH\""
     ]
   }
