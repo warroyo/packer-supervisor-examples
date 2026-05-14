@@ -25,7 +25,7 @@ govc_url         = "https://vcenter.example.com"
 govc_username    = "administrator@vsphere.local"
 govc_password    = ""
 govc_insecure    = false
-upload_overwrite = false   # set true to replace an existing library item
+upload_overwrite = "false"   # set to "true" to replace an existing library item
 
 // Supervisor Connection
 //   Leave kubeconfig_path / supervisor_namespace empty to use the

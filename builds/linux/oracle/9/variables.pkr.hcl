@@ -37,9 +37,9 @@ variable "govc_insecure" {
 }
 
 variable "upload_overwrite" {
-  type        = bool
-  description = "Delete the existing content library item before uploading. Required when the item already exists and needs to be replaced."
-  default     = false
+  type        = string
+  description = "Set to \"true\" to delete the existing content library item before uploading. Required when the item already exists and needs to be replaced."
+  default     = "false"
 }
 
 // Supervisor Connection
