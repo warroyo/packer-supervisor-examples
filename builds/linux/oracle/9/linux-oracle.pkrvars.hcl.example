@@ -2,13 +2,14 @@
     DESCRIPTION:
     Oracle Linux 9 build variables (example).
     Packer Plugin for VMware vSphere: 'vsphere-supervisor' builder.
+    2-Stage Image Factory: ISO → Base OVF (Stage 1) → Golden Image (Stage 2).
 
     Copy to linux-oracle.pkrvars.hcl and edit before running.
 
     Prerequisites: run `make remaster` to build the custom ISO, then either:
       - `make upload` to push it to the content library via govc (recommended), or
       - host it at a URL reachable by the Supervisor cluster and set import_source_url.
-    Then run `make build` (or `make all-local` / `make all-url` for a single command).
+    Then run `make stage1` → `make stage2` (or `make all-local` for a single command).
 */
 
 // Source ISO (remaster-iso build stage)
@@ -34,7 +35,7 @@ upload_overwrite = "false"   # set to "true" to replace an existing library item
 kubeconfig_path      = ""
 supervisor_namespace = "wcp-oracle-build"
 
-// Source Image Import
+// Source Image Import (Stage 1)
 //   Two paths for getting the remastered ISO into the content library:
 //
 //   A) govc upload (recommended — run `make upload`):
@@ -54,41 +55,54 @@ watch_import_timeout_sec    = 1800
 clean_imported_image        = false
 keep_import_request         = false
 
-// Source VM Image
-//   The VirtualMachineImage resource name assigned by the Supervisor — this is
-//   NOT the same as import_target_image_name (the content library friendly name).
+// Source VM Image (Stage 1)
+//   The VirtualMachineImage resource name for the ISO, assigned by the Supervisor.
+//   This is NOT the same as import_target_image_name (the content library label).
 //   After running `make upload`, discover the correct value with:
 //     kubectl get virtualmachineimage -n <your-namespace>
-//   The name is typically assigned by the Supervisor and differs from the label
-//   you gave the content library item.
 image_name = ""
 
-// VM Class and Storage Class
+// VM Class and Storage Class (shared across stages)
 //   Run:
 //     kubectl get virtualmachineclass
 //     kubectl get storageclass
 class_name    = "best-effort-medium"
 storage_class = "wcp-storage-policy"
 
-// Source VM hardware
+// Source VM hardware (Stage 1)
 //   iso_boot_disk_size is the PVC allocated for the OS install.
-//   watch_source_timeout_sec must cover ISO boot + Anaconda install + reboot.
-guest_os_type            = "otherlinux64guest"
+//   watch_source_timeout_sec must cover ISO boot + Anaconda install + poweroff.
+guest_os_type            = "otherLinux64Guest"
 iso_boot_disk_size       = "40Gi"
 watch_source_timeout_sec = 3600
 
 // Source VM lifecycle
 keep_input_artifact = false
 
-// Publishing the customized image back to a content library.
-//   The published item appears as an OVF template that can be downloaded
-//   as an OVA via the vSphere Client or `govc library.export`.
-// publish_location_name is the ContentLibrary CRD name (cl-xxxx) from the Supervisor,
-// NOT the human-readable library label. Find it with:
-//   kubectl get contentlibrary -n <your-namespace>
-publish_location_name     = ""
-publish_image_name        = ""
-watch_publish_timeout_sec = 1800
+// ── Stage 1: Base OS Installation (ISO → OVF Template) ─────────────────────
+//   Publishes the installed OS disk as an OVF template.
+//
+//   stage1_publish_library_name is the human-readable content library name.
+//   Run `make resolve` to auto-discover the CRD name (cl-xxxx) via kubectl
+//   and write it to .build/resolved.pkrvars.hcl.
+//   Or set stage1_publish_location_name manually:
+//     kubectl get contentlibrary -n <your-namespace>
+stage1_publish_library_name  = ""
+stage1_publish_location_name = ""
+stage1_publish_image_name    = ""
+
+// ── Stage 2: Software Provisioning (OVF Template → Golden Image) ───────────
+//   stage2_image_name is the VirtualMachineImage resource name for the base OVF
+//   that Stage 1 published. Run `make resolve` after Stage 1 to auto-discover it,
+//   or find it manually:
+//     kubectl get virtualmachineimage -n <your-namespace>
+//
+//   stage2_publish_library_name works the same as stage1_publish_library_name.
+stage2_publish_library_name    = ""
+stage2_image_name              = ""
+stage2_publish_location_name   = ""
+stage2_publish_image_name      = ""
+watch_publish_timeout_sec      = 1800
 
 // Guest Operating System Metadata (naming only)
 vm_guest_os_family  = "linux"
@@ -106,7 +120,7 @@ build_password           = "VMware1!"
 build_password_encrypted = "$6$eTPQ0ZoTtGVJLIsG$oy0/RpkPuxERn2v9tIZZlaCoel0ZFG3KwcqGnoCbOE/os0o77Dp7ENvK5r/NYQ.EYVvoRS91nqvZt4aNl1Ovn."
 build_key                = ""
 
-// SSH
+// SSH (Stage 2 only)
 communicator_port    = 22
 communicator_timeout = "60m"
 

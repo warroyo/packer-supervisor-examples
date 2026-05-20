@@ -2,6 +2,7 @@
     DESCRIPTION:
     Oracle Linux 9 input variables.
     Packer Plugin for VMware vSphere: 'vsphere-supervisor' builder.
+    Shared across remaster, upload, Stage 1 (base), and Stage 2 (provision).
 */
 
 //  BLOCK: variable
@@ -69,16 +70,16 @@ variable "source_iso_sha256" {
   default     = ""
 }
 
-// Source Virtual Machine
+// Source Virtual Machine (shared across stages)
 
 variable "image_name" {
   type        = string
-  description = "Name of the VirtualMachineImage resource visible in the Supervisor namespace. This is NOT the friendly name given to the content library item — it is the resource name reported by `kubectl get virtualmachineimage -n <namespace>` after the ISO has been uploaded and the namespace has synced it."
+  description = "Name of the VirtualMachineImage resource for the ISO (Stage 1 source). This is the resource name reported by `kubectl get virtualmachineimage -n <namespace>` after the ISO has been uploaded."
 }
 
 variable "source_name" {
   type        = string
-  description = "Name to give the source VirtualMachine object created during the build. Maximum 15 characters. Defaults to a generated name when unset."
+  description = "Name to give the source VirtualMachine object. Maximum 15 characters. Auto-generated per stage when unset (s1-TIMESTAMP / s2-TIMESTAMP)."
   default     = ""
 }
 
@@ -100,14 +101,8 @@ variable "guest_os_type" {
 
 variable "iso_boot_disk_size" {
   type        = string
-  description = "Size of the boot PVC for the source VM."
+  description = "Size of the boot PVC for the Stage 1 source VM."
   default     = "40Gi"
-}
-
-variable "bootstrap_provider" {
-  type        = string
-  description = "Bootstrap provider used to seed the source VM. One of CloudInit, Sysprep, vAppConfig."
-  default     = "CloudInit"
 }
 
 variable "keep_input_artifact" {
@@ -118,11 +113,11 @@ variable "keep_input_artifact" {
 
 variable "watch_source_timeout_sec" {
   type        = number
-  description = "Number of seconds to wait for the source VM to be ready (SSH reachable). When booting from an install ISO this must cover ISO boot + Anaconda install + first reboot — allow at least 3600s."
+  description = "Number of seconds to wait for the source VM to be ready. Stage 1 (ISO boot + Anaconda install + poweroff) needs at least 3600s. Stage 2 (cloud-init boot) typically needs less."
   default     = 3600
 }
 
-// Source Image Importing (optional, off by default)
+// Source Image Importing (Stage 1 only, optional — off by default)
 
 variable "import_source_url" {
   type        = string
@@ -150,7 +145,7 @@ variable "import_target_image_type" {
 
 variable "import_target_image_name" {
   type        = string
-  description = "Friendly name to assign to the item in the content library. Used by the remaster and upload stages to name the local ISO file (.build/<name>.iso) and the library item. This is distinct from image_name — after upload, check `kubectl get virtualmachineimage -n <namespace>` to find the resource name the Supervisor assigned."
+  description = "Friendly name to assign to the item in the content library. Used by the remaster and upload stages to name the local ISO file (.build/<name>.iso) and the library item."
   default     = ""
 }
 
@@ -178,23 +173,55 @@ variable "clean_imported_image" {
   default     = false
 }
 
-// Source Image Publishing
+// Stage 1: Publishing the base OVF template
 
-variable "publish_location_name" {
+variable "stage1_publish_library_name" {
   type        = string
-  description = "ContentLibrary CRD name (cl-xxxx form) from the Supervisor namespace into which the customized image will be published. This is NOT the human-readable library label — find it with `kubectl get contentlibrary -n <namespace>`. Leave empty to skip publishing."
+  description = "Human-readable name of the content library for Stage 1 output. Used by resolve.pkr.hcl to auto-resolve stage1_publish_location_name via kubectl."
   default     = ""
 }
 
-variable "publish_image_name" {
+variable "stage1_publish_location_name" {
   type        = string
-  description = "Name to assign to the published image. Auto-assigned when unset."
+  description = "ContentLibrary CRD name (cl-xxxx form) from the Supervisor namespace into which Stage 1 publishes the base OVF template. Find it with `kubectl get contentlibrary -n <namespace>`."
+  default     = ""
+}
+
+variable "stage1_publish_image_name" {
+  type        = string
+  description = "Name to assign to the Stage 1 published base image. Auto-assigned when unset."
+  default     = ""
+}
+
+// Stage 2: Source image and publishing the final golden image
+
+variable "stage2_publish_library_name" {
+  type        = string
+  description = "Human-readable name of the production content library for Stage 2 output. Used by resolve.pkr.hcl to auto-resolve stage2_publish_location_name via kubectl."
+  default     = ""
+}
+
+variable "stage2_image_name" {
+  type        = string
+  description = "Name of the VirtualMachineImage resource for the base OVF (Stage 1 output). This is the image_name Stage 2 clones from. Find it with `kubectl get virtualmachineimage -n <namespace>` after Stage 1 publishes."
+  default     = ""
+}
+
+variable "stage2_publish_location_name" {
+  type        = string
+  description = "ContentLibrary CRD name (cl-xxxx form) for the production content library. Stage 2 publishes the final golden image here."
+  default     = ""
+}
+
+variable "stage2_publish_image_name" {
+  type        = string
+  description = "Name to assign to the Stage 2 published golden image. Auto-assigned when unset."
   default     = ""
 }
 
 variable "watch_publish_timeout_sec" {
   type        = number
-  description = "Number of seconds to wait for publishing to complete."
+  description = "Number of seconds to wait for publishing to complete (used by both stages)."
   default     = 600
 }
 
@@ -234,7 +261,7 @@ variable "vm_guest_os_timezone" {
   default     = "UTC"
 }
 
-// Communicator (SSH) Settings and Credentials
+// Communicator (SSH) Settings and Credentials (Stage 2)
 
 variable "build_username" {
   type        = string

@@ -18,7 +18,8 @@ keyboard ${VM_GUEST_OS_KEYBOARD}
 timezone ${VM_GUEST_OS_TIMEZONE} --isUtc
 
 ### Network — DHCP on all interfaces; SSH firewall rule enabled.
-network --bootproto=dhcp --onboot=yes --activate
+### OMIT --activate so Anaconda does not hang searching for DHCP during offline install.
+network --bootproto=dhcp --onboot=yes
 firewall --enabled --ssh
 
 ### Lock root, create build user with wheel membership.
@@ -48,9 +49,9 @@ services --enabled=NetworkManager,sshd
 %packages --ignoremissing --excludedocs
 @core
 open-vm-tools
+cloud-init
 sudo
 perl
-cloud-init
 -iwl*firmware
 %end
 
@@ -73,7 +74,22 @@ fi
 
 # Allow password authentication so Packer can SSH in with build_password.
 sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Clear temporary network files created by Anaconda.
+rm -f /etc/NetworkManager/system-connections/*.nmconnection
+
+# Configure cloud-init to use VMware backdoor datasource exclusively.
+cat > /etc/cloud/cloud.cfg.d/99-tanzu-datasource.cfg <<CLOUDCFG
+datasource_list: [ VMware, OVF, None ]
+CLOUDCFG
+
+# Enable vmtoolsd and cloud-init services.
+systemctl enable vmtoolsd
+systemctl enable cloud-init
+
+# Wipe machine ID for clean template cloning.
+truncate -s 0 /etc/machine-id
 %end
 
-### Reboot and eject install media when done.
-reboot --eject
+### Power off and eject install media so Packer detects build completion.
+poweroff --eject

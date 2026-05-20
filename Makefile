@@ -1,7 +1,8 @@
-PACKER_DIR := builds/linux/oracle/9
-VAR_FILE   := $(PACKER_DIR)/linux-oracle.pkrvars.hcl
+PACKER_DIR    := builds/linux/oracle/9
+VAR_FILE      := $(PACKER_DIR)/linux-oracle.pkrvars.hcl
+RESOLVED_FILE := .build/resolved.pkrvars.hcl
 
-.PHONY: init remaster upload build all-url all-local clean
+.PHONY: init remaster upload resolve stage1 stage2 build all-url all-local clean
 
 init:
 	packer init $(PACKER_DIR)
@@ -15,24 +16,46 @@ remaster: init
 
 ## Upload the remastered ISO to the content library via govc.
 ## Set govc_url, govc_username, govc_password in the vars file.
-## After first upload set import_source_url="" so Packer skips re-importing.
 upload: init
 	packer build \
 	  -only="upload-iso.null.upload" \
 	  -var-file=$(VAR_FILE) \
 	  $(PACKER_DIR)
 
-## Run the vsphere-supervisor packer build.
-build: init
+## Resolve Supervisor resource names via kubectl and write .build/resolved.pkrvars.hcl.
+## Optional — run after upload and/or stage1 to auto-discover image_name, stage2_image_name,
+## and content library CRD names. Requires kubectl access to the Supervisor namespace.
+resolve: init
 	packer build \
-	  -only="linux-oracle-9.vsphere-supervisor.linux-oracle" \
+	  -only="resolve-vars.null.resolve" \
 	  -var-file=$(VAR_FILE) \
 	  $(PACKER_DIR)
 
-## Full local-upload path: remaster → upload via govc → build.
+## Stage 1: Base OS Installation — ISO to OVF template (communicator=none).
+## Loads .build/resolved.pkrvars.hcl if present (overrides var-file values).
+stage1: init
+	packer build \
+	  -only="stage1-base.vsphere-supervisor.stage1-base" \
+	  -var-file=$(VAR_FILE) \
+	  $$([ -f $(RESOLVED_FILE) ] && echo "-var-file=$(RESOLVED_FILE)") \
+	  $(PACKER_DIR)
+
+## Stage 2: Software Provisioning — OVF template to final golden image (communicator=ssh).
+## Loads .build/resolved.pkrvars.hcl if present (overrides var-file values).
+stage2: init
+	packer build \
+	  -only="stage2-provision.vsphere-supervisor.stage2-provision" \
+	  -var-file=$(VAR_FILE) \
+	  $$([ -f $(RESOLVED_FILE) ] && echo "-var-file=$(RESOLVED_FILE)") \
+	  $(PACKER_DIR)
+
+## Run both build stages sequentially.
+build: stage1 stage2
+
+## Full local-upload path: remaster → upload via govc → stage1 → stage2.
 all-local: remaster upload build
 
-## Full URL-import path: remaster → build (Packer imports from import_source_url).
+## Full URL-import path: remaster → stage1 (Packer imports from import_source_url) → stage2.
 all-url: remaster build
 
 clean:
