@@ -79,15 +79,16 @@ watch_source_timeout_sec = 3600
 // Source VM lifecycle
 keep_input_artifact = false
 
+// ── Publish Library (shared across Stage 1 and Stage 2) ────────────────────
+//   publish_library_name is the human-readable content library name used by
+//   both stages. Run `make resolve` to auto-discover the CRD name (cl-xxxx)
+//   via kubectl and write it to .build/resolved.pkrvars.hcl.
+//   Or set stage1_publish_location_name / stage2_publish_location_name manually:
+//     kubectl get contentlibrary -n <your-namespace>
+publish_library_name = ""
+
 // ── Stage 1: Base OS Installation (ISO → OVF Template) ─────────────────────
 //   Publishes the installed OS disk as an OVF template.
-//
-//   stage1_publish_library_name is the human-readable content library name.
-//   Run `make resolve` to auto-discover the CRD name (cl-xxxx) via kubectl
-//   and write it to .build/resolved.pkrvars.hcl.
-//   Or set stage1_publish_location_name manually:
-//     kubectl get contentlibrary -n <your-namespace>
-stage1_publish_library_name  = ""
 stage1_publish_location_name = ""
 stage1_publish_image_name    = ""
 
@@ -96,9 +97,6 @@ stage1_publish_image_name    = ""
 //   that Stage 1 published. Run `make resolve` after Stage 1 to auto-discover it,
 //   or find it manually:
 //     kubectl get virtualmachineimage -n <your-namespace>
-//
-//   stage2_publish_library_name works the same as stage1_publish_library_name.
-stage2_publish_library_name    = ""
 stage2_image_name              = ""
 stage2_publish_location_name   = ""
 stage2_publish_image_name      = ""
