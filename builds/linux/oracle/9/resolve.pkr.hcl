@@ -12,10 +12,6 @@
       make resolve
 */
 
-packer {
-  required_version = ">= 1.15.0"
-}
-
 source "null" "resolve" {
   communicator = "none"
 }

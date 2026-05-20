@@ -12,10 +12,6 @@
       make all
 */
 
-packer {
-  required_version = ">= 1.15.0"
-}
-
 source "null" "remaster" {
   communicator = "none"
 }

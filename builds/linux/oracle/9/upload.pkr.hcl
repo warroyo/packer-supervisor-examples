@@ -13,10 +13,6 @@
     already-present library item via image_name on subsequent runs.
 */
 
-packer {
-  required_version = ">= 1.15.0"
-}
-
 source "null" "upload" {
   communicator = "none"
 }

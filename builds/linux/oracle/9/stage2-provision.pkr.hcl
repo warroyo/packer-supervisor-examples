@@ -5,23 +5,13 @@
 
     Clones the base OVF template produced by Stage 1.  Because the source is an
     image (not a raw ISO), the plugin preserves the bootstrap block in the
-    Kubernetes VirtualMachine manifest, allowing the Tanzu VM Operator to inject
+    Kubernetes VirtualMachine manifest, allowing the VM Operator to inject
     guestinfo network metadata via cloud-init.  This brings the network up
     automatically, enabling SSH-based provisioning.
 
     The build ends with a mandatory seal provisioner that resets cloud-init,
     clears network state, and wipes the machine ID so each clone boots clean.
 */
-
-packer {
-  required_version = ">= 1.15.0"
-  required_plugins {
-    vsphere = {
-      source  = "github.com/vmware/vsphere"
-      version = ">= 2.1.1"
-    }
-  }
-}
 
 locals {
   build_by          = "Built by: HashiCorp Packer ${packer.version}"

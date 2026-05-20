@@ -13,16 +13,6 @@
     ISO, which prevents cloud-init network injection and makes SSH unreachable.
 */
 
-packer {
-  required_version = ">= 1.15.0"
-  required_plugins {
-    vsphere = {
-      source  = "github.com/vmware/vsphere"
-      version = ">= 2.1.1"
-    }
-  }
-}
-
 locals {
   stage1_source_name = var.source_name != "" ? var.source_name : substr(
     replace("s1-${formatdate("MMDDhhmm", timestamp())}", ".", ""), 0, 15
