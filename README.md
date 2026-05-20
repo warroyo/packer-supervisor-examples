@@ -8,9 +8,8 @@ builder.
 
 The `packer-plugin-vsphere` has a hard limitation: when the `vsphere-supervisor`
 builder boots from a raw ISO, it strips the `spec.bootstrap` / `cloudInit` block
-from the Kubernetes `VirtualMachine` manifest
-([`step_create_source.go`](https://developer.hashicorp.com/packer/integrations/vmware/vsphere/latest/components/builder/vsphere-supervisor)).
-This prevents the Tanzu VM Operator from injecting `guestinfo` network metadata,
+from the Kubernetes `VirtualMachine` manifest (`step_create_source.go`).
+This prevents the VM Operator from injecting `guestinfo` network metadata,
 causing SSH-based builds to fail with a `NoBootstrapStatus` error.
 
 The workaround is a two-stage pipeline:
@@ -53,7 +52,7 @@ provisioning.
 
 ## Prerequisites
 
-- A vSphere environment with **vSphere with Tanzu / Supervisor** enabled.
+- A vSphere environment with **vSphere Supervisor** enabled.
 - A **Supervisor namespace** you can deploy into.
 - A **VirtualMachineClass** (`kubectl get virtualmachineclass`).
 - A **StorageClass** assigned to your namespace (`kubectl get storageclass`).
@@ -66,7 +65,7 @@ provisioning.
   (installed automatically by `packer init` / `make init`).
 - **Ansible** (required for the Stage 2 cleanup playbook):
   ```sh
-  pip install ansible
+  apt-get install ansible
   ```
 - **Remaster tools** (required to build the custom ISO):
   ```sh
@@ -204,8 +203,7 @@ For auto-resolution of resource names, also set:
 
 | Variable                       | Notes                                                           |
 | ------------------------------ | --------------------------------------------------------------- |
-| `stage1_publish_library_name`  | Human-readable name of the Stage 1 output content library       |
-| `stage2_publish_library_name`  | Human-readable name of the production content library           |
+| `publish_library_name`         | Human-readable name of the content library (used by both stages) |
 | `stage1_publish_image_name`    | Name to assign to the base OVF (for `stage2_image_name` resolution) |
 
 Or set the CRD names manually (skip `make resolve`):
@@ -275,8 +273,8 @@ make resolve
 This runs a Packer `null` build stage that queries `kubectl` to auto-discover:
 
 - `image_name` — matched from `import_target_image_name`
-- `stage1_publish_location_name` — matched from `stage1_publish_library_name`
-- `stage2_publish_location_name` — matched from `stage2_publish_library_name`
+- `stage1_publish_location_name` — matched from `publish_library_name`
+- `stage2_publish_location_name` — matched from `publish_library_name`
 
 Results are written to `.build/resolved.pkrvars.hcl`, which the Makefile
 automatically loads as a second `-var-file` (overriding empty defaults).
@@ -439,7 +437,7 @@ descriptions. Key variables:
 | `import_target_location_name`  | (2)      | Writable content library for ISO import                      |
 | `import_target_image_name`     | (2)      | Friendly label for the ISO in the content library            |
 | `import_source_url`            | (2)      | URL for cluster-side import; leave empty for govc path       |
-| `stage1_publish_library_name`  | no       | Human-readable library name for auto-resolution              |
+| `publish_library_name`         | no       | Human-readable library name for auto-resolution (both stages) |
 | `stage1_publish_location_name` | (3)      | ContentLibrary CRD name (`cl-xxxx`) — auto-resolved or manual |
 | `stage1_publish_image_name`    | no       | Name for the base OVF; auto-generated if unset               |
 | `guest_os_type`                | no       | Default `oracleLinux9_64Guest`                               |
@@ -450,7 +448,7 @@ descriptions. Key variables:
 | Variable                       | Required | Notes                                                        |
 | ------------------------------ | :------: | ------------------------------------------------------------ |
 | `stage2_image_name`            | yes      | VirtualMachineImage for the base OVF (auto-resolved by `make resolve`) |
-| `stage2_publish_library_name`  | no       | Human-readable library name for auto-resolution              |
+| `publish_library_name`         | no       | Human-readable library name for auto-resolution (both stages) |
 | `stage2_publish_location_name` | (3)      | ContentLibrary CRD name (`cl-xxxx`) — auto-resolved or manual |
 | `stage2_publish_image_name`    | no       | Name for the golden image; auto-generated if unset           |
 | `communicator_port`            | no       | Default `22`                                                 |
@@ -510,7 +508,7 @@ descriptions. Key variables:
 - **"No ContentLibrary matching ...":** the match checks `.status.name`,
   `.spec.name`, and `.metadata.name`. Run
   `kubectl get contentlibrary -n <namespace> -o yaml` to see available fields
-  and adjust `stage1_publish_library_name` / `stage2_publish_library_name`.
+  and adjust `publish_library_name`.
 
 ## References
 

@@ -175,9 +175,9 @@ variable "clean_imported_image" {
 
 // Stage 1: Publishing the base OVF template
 
-variable "stage1_publish_library_name" {
+variable "publish_library_name" {
   type        = string
-  description = "Human-readable name of the content library for Stage 1 output. Used by resolve.pkr.hcl to auto-resolve stage1_publish_location_name via kubectl."
+  description = "Human-readable name of the content library used by both Stage 1 and Stage 2. Used by resolve.pkr.hcl to auto-resolve stage1_publish_location_name and stage2_publish_location_name via kubectl."
   default     = ""
 }
 
@@ -194,12 +194,6 @@ variable "stage1_publish_image_name" {
 }
 
 // Stage 2: Source image and publishing the final golden image
-
-variable "stage2_publish_library_name" {
-  type        = string
-  description = "Human-readable name of the production content library for Stage 2 output. Used by resolve.pkr.hcl to auto-resolve stage2_publish_location_name via kubectl."
-  default     = ""
-}
 
 variable "stage2_image_name" {
   type        = string
