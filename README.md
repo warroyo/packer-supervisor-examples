@@ -46,11 +46,14 @@ provisioning.
 │                   ├── ks.cfg.tpl                    # Kickstart template (rendered by remaster-iso.sh)
 │                   └── stage2-userdata.yaml           # Cloud-init userdata for Stage 2 bootstrap
 └── scripts/
+    ├── install-prereqs-ubuntu.sh                     # Install all required tools on Ubuntu
     ├── remaster-iso.sh                               # ISO remastering script
     └── resolve-vars.sh                               # Resource name resolution (invoked by resolve.pkr.hcl)
 ```
 
 ## Prerequisites
+
+### vSphere
 
 - A vSphere environment with **vSphere Supervisor** enabled.
 - A **Supervisor namespace** you can deploy into.
@@ -61,26 +64,34 @@ provisioning.
   single library or separate libraries for staging and production.
 - A **kubeconfig** targeting the Supervisor cluster and namespace.
   Verify with `kubectl get ns`.
-- **Packer 1.15.0+** with the `github.com/vmware/vsphere` plugin v2.1.1+
-  (installed automatically by `packer init` / `make init`).
-- **Ansible** (required for the Stage 2 cleanup playbook):
-  ```sh
-  apt-get install ansible
-  ```
-- **Remaster tools** (required to build the custom ISO):
-  ```sh
-  # macOS
-  brew install xorriso gettext && brew link --force gettext
-  # Linux
-  dnf install xorriso gettext   # or apt-get install xorriso gettext
-  ```
-- **Optional — for auto-resolution** (`make resolve`): `jq`
-  ```sh
-  # macOS
-  brew install jq
-  # Linux
-  dnf install jq   # or apt-get install jq
-  ```
+
+### Tooling
+
+On **Ubuntu**, use the provided script to install all required tools in one step:
+
+```sh
+make install-prereqs
+```
+
+To also install `govc` (required for `make upload`):
+
+```sh
+make install-prereqs INSTALL_GOVC=true
+```
+
+The script installs: `packer`, `ansible`, `xorriso`, `gettext`, `jq`, `kubectl`.
+It skips tools that are already present. Run `make init` afterwards to download
+the Packer plugins.
+
+On **macOS**, install manually:
+
+```sh
+brew install hashicorp/tap/packer xorriso gettext jq && brew link --force gettext
+pip install ansible
+```
+
+### Other requirements
+
 - **Network access from your Packer host to the source VM over SSH** (Stage 2
   only). The VM is created inside the Supervisor namespace; if the namespace
   network is not routable from your host, run Packer from a jump host that is.
@@ -389,18 +400,19 @@ govc library.export "/<library-name>/<published-image-name>" ./oraclelinux-9.ova
 
 ## Makefile targets
 
-| Target           | What it does                                                                |
-| ---------------- | --------------------------------------------------------------------------- |
-| `make init`      | `packer init` — downloads plugins                                           |
-| `make remaster`  | Builds the remastered ISO (downloads vendor ISO if cache miss)              |
-| `make upload`    | Uploads the remastered ISO to the content library via govc                  |
-| `make resolve`   | Queries kubectl, writes `.build/resolved.pkrvars.hcl` (optional)           |
-| `make stage1`    | Stage 1: ISO → base OVF template (`communicator=none`)                     |
-| `make stage2`    | Stage 2: base OVF → golden image (`communicator=ssh`)                      |
-| `make build`     | Runs `stage1` then `stage2`                                                 |
-| `make all-local` | `remaster` → `upload` → `stage1` → `stage2`                               |
-| `make all-url`   | `remaster` → `stage1` → `stage2` (Packer imports from `import_source_url`) |
-| `make clean`     | Removes `.cache/` and `.build/`                                             |
+| Target                        | What it does                                                                |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `make install-prereqs`        | Install required tools on Ubuntu (add `INSTALL_GOVC=true` for govc)        |
+| `make init`                   | `packer init` — downloads plugins                                           |
+| `make remaster`               | Builds the remastered ISO (downloads vendor ISO if cache miss)              |
+| `make upload`                 | Uploads the remastered ISO to the content library via govc                  |
+| `make resolve`                | Queries kubectl, writes `.build/resolved.pkrvars.hcl` (optional)           |
+| `make stage1`                 | Stage 1: ISO → base OVF template (`communicator=none`)                     |
+| `make stage2`                 | Stage 2: base OVF → golden image (`communicator=ssh`)                      |
+| `make build`                  | Runs `stage1` then `stage2`                                                 |
+| `make all-local`              | `remaster` → `upload` → `stage1` → `stage2`                               |
+| `make all-url`                | `remaster` → `stage1` → `stage2` (Packer imports from `import_source_url`) |
+| `make clean`                  | Removes `.cache/` and `.build/`                                             |
 
 The default `VAR_FILE` is `builds/linux/oracle/9/linux-oracle.pkrvars.hcl`.
 Override on the command line: `make stage1 VAR_FILE=path/to/other.pkrvars.hcl`.
@@ -476,7 +488,7 @@ descriptions. Key variables:
 
 - **Anaconda fails or VM never powers off:** the kickstart may have an error.
   Attach to the VM console in vSphere Client and check the Anaconda log.
-  The kickstart uses `poweroff --eject` — if the VM stays running, Anaconda
+  The kickstart uses `poweroff` — if the VM stays running, Anaconda
   is likely hung (check for `--activate` on the network line causing a DHCP
   hang).
 - **Stage 1 build completes but no OVF in the library:** verify

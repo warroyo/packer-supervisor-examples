@@ -79,7 +79,7 @@ sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/ss
 rm -f /etc/NetworkManager/system-connections/*.nmconnection
 
 # Configure cloud-init to use VMware backdoor datasource exclusively.
-cat > /etc/cloud/cloud.cfg.d/99-tanzu-datasource.cfg <<CLOUDCFG
+cat > /etc/cloud/cloud.cfg.d/99-vmware-datasource.cfg <<CLOUDCFG
 datasource_list: [ VMware, OVF, None ]
 CLOUDCFG
 
@@ -91,5 +91,5 @@ systemctl enable cloud-init
 truncate -s 0 /etc/machine-id
 %end
 
-### Power off and eject install media so Packer detects build completion.
-poweroff --eject
+### Power off when install is complete so Packer detects build completion.
+poweroff

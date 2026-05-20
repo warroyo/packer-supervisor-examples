@@ -2,7 +2,13 @@ PACKER_DIR    := builds/linux/oracle/9
 VAR_FILE      := $(PACKER_DIR)/linux-oracle.pkrvars.hcl
 RESOLVED_FILE := .build/resolved.pkrvars.hcl
 
-.PHONY: init remaster upload resolve stage1 stage2 build all-url all-local clean
+.PHONY: install-prereqs init remaster upload resolve stage1 stage2 build all-url all-local clean
+
+## Install required tools on Ubuntu (packer, ansible, xorriso, gettext, jq, kubectl).
+## To also install govc: make install-prereqs INSTALL_GOVC=true
+INSTALL_GOVC ?= false
+install-prereqs:
+	INSTALL_GOVC=$(INSTALL_GOVC) bash scripts/install-prereqs-ubuntu.sh
 
 init:
 	packer init $(PACKER_DIR)
