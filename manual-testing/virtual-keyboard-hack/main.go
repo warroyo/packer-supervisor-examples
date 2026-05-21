@@ -15,6 +15,7 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/methods"
+	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 	"golang.org/x/mobile/event/key"
 )
@@ -73,6 +74,7 @@ func main() {
 	vcHost := os.Getenv("GOVMOMI_URL")
 	vcUser := os.Getenv("GOVMOMI_USERNAME")
 	vcPass := os.Getenv("GOVMOMI_PASSWORD")
+	insecure := os.Getenv("GOVMOMI_INSECURE") != "false" // default insecure=true
 	if vcHost == "" {
 		log.Fatal("Please set GOVMOMI_URL environment variable")
 	}
@@ -109,13 +111,19 @@ func main() {
 		u.User = url.UserPassword(vcUser, vcPass)
 	}
 
+	log.Printf("Connecting to %s://%s%s (insecure=%v)", u.Scheme, u.Host, u.Path, insecure)
+	if u.User != nil {
+		log.Printf("Username: %s", u.User.Username())
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	client, err := govmomi.NewClient(ctx, u, true)
+	client, err := govmomi.NewClient(ctx, u, insecure)
 	if err != nil {
 		log.Fatalf("Error connecting to vCenter: %v", err)
 	}
+	log.Printf("Connected (authenticated: %v)", client.IsVC())
 
 	finder := find.NewFinder(client.Client, true)
 
@@ -123,15 +131,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error finding default datacenter: %v", err)
 	}
+	log.Printf("Datacenter: %s", dc.InventoryPath)
 	finder.SetDatacenter(dc)
 
 	vm, err := finder.VirtualMachine(ctx, cfg.VMName)
 	if err != nil {
 		log.Fatalf("Error finding VM %s: %v", cfg.VMName, err)
 	}
+	log.Printf("Found VM: %s (moref: %s)", cfg.VMName, vm.Reference().Value)
 
 	fmt.Printf("Sending native USB scan codes to %s...\n", cfg.VMName)
 	if err = sendBootCommand(ctx, client, vm, bootCommand); err != nil {
+		if soap.IsSoapFault(err) {
+			fault := soap.ToSoapFault(err)
+			log.Fatalf("SOAP fault sending boot command: %s — detail: %+v", fault.String, fault.Detail)
+		}
 		log.Fatalf("Error sending boot command: %v", err)
 	}
 	fmt.Println("Boot command sent successfully!")
