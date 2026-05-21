@@ -48,7 +48,8 @@ provisioning.
 └── scripts/
     ├── install-prereqs-ubuntu.sh                     # Install all required tools on Ubuntu
     ├── remaster-iso.sh                               # ISO remastering script
-    └── resolve-vars.sh                               # Resource name resolution (invoked by resolve.pkr.hcl)
+    ├── resolve-vars.sh                               # Resource name resolution (invoked by resolve.pkr.hcl)
+    └── upload-iso.sh                                 # govc upload (invoked by upload.pkr.hcl)
 ```
 
 ## Prerequisites

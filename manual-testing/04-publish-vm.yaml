@@ -1,0 +1,27 @@
+# STEP 4: Publish the Stage 1 VM as a reusable OVF template in the content library.
+#
+# Apply ONLY after the kickstart completes and ol9-stage1 is powered off:
+#   kubectl get vm ol9-stage1 -n production-c5b8n -o jsonpath='{.status.powerState}'
+#
+# The VM Operator snapshots the disk, converts to OVF, and publishes it into
+# the target content library. Track progress with:
+#   kubectl get vmpublishrequest ol9-stage1-publish -n production-c5b8n -w
+apiVersion: vmoperator.vmware.com/v1alpha4
+kind: VirtualMachinePublishRequest
+metadata:
+  name: ol9-stage1-publish
+  namespace: production-c5b8n
+spec:
+  source:
+    name: ol9-stage1
+    apiVersion: vmoperator.vmware.com/v1alpha4
+    kind: VirtualMachine
+  target:
+    item:
+      name: ol9-base-template
+      description: "Oracle Linux 9 base image — Stage 1 output"
+    location:
+      name: cl-production-images
+      apiVersion: imageregistry.vmware.com/v1alpha1
+      kind: ContentLibrary
+  ttlSecondsAfterFinished: 3600

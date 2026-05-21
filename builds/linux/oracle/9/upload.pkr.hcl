@@ -32,9 +32,6 @@ build {
       "LOCAL_ISO_PATH=${path.root}/../../../../.build/${var.import_target_image_name}.iso",
       "UPLOAD_OVERWRITE=${var.upload_overwrite}",
     ]
-    inline = [
-      "if [ \"$UPLOAD_OVERWRITE\" = 'true' ]; then govc library.rm \"/$IMPORT_LIBRARY/$IMPORT_IMAGE_NAME\" || true; fi",
-      "govc library.import -n \"$IMPORT_IMAGE_NAME\" \"$IMPORT_LIBRARY\" \"$LOCAL_ISO_PATH\""
-    ]
+    script = "${path.root}/../../../../scripts/upload-iso.sh"
   }
 }
