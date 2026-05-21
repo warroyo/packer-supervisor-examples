@@ -70,8 +70,10 @@ func main() {
 	flag.StringVar(&vmFlag, "vm", "", "VM name (overrides config file)")
 	flag.Parse()
 
-	vcURL := os.Getenv("GOVMOMI_URL")
-	if vcURL == "" {
+	vcHost := os.Getenv("GOVMOMI_URL")
+	vcUser := os.Getenv("GOVMOMI_USERNAME")
+	vcPass := os.Getenv("GOVMOMI_PASSWORD")
+	if vcHost == "" {
 		log.Fatal("Please set GOVMOMI_URL environment variable")
 	}
 
@@ -99,9 +101,12 @@ func main() {
 
 	bootCommand := strings.Join(cfg.BootCommand, "")
 
-	u, err := url.Parse(vcURL)
+	u, err := url.Parse(vcHost)
 	if err != nil {
-		log.Fatalf("Error parsing URL: %v", err)
+		log.Fatalf("Error parsing GOVMOMI_URL: %v", err)
+	}
+	if vcUser != "" {
+		u.User = url.UserPassword(vcUser, vcPass)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
