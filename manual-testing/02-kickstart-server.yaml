@@ -1,6 +1,6 @@
 # STEP 2: Host the kickstart file inside the namespace so the Stage 1 VM can
-# reach it over the shared workload network. Using nginx-unprivileged on port
-# 8080 satisfies restricted Pod Security Admission (no privileged ports).
+# reach it via the ClusterIP. Using nginx-unprivileged on port 8080 satisfies
+# restricted Pod Security Admission (no privileged ports).
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -104,7 +104,7 @@ metadata:
   name: kickstart-service
   namespace: production-c5b8n
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: kickstart-server
   ports:
