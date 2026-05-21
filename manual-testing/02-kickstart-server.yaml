@@ -1,0 +1,112 @@
+# STEP 2: Host the kickstart file inside the namespace so the Stage 1 VM can
+# reach it over the shared workload network. Using nginx-unprivileged on port
+# 8080 satisfies restricted Pod Security Admission (no privileged ports).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kickstart-file
+  namespace: my-tanzu-namespace
+data:
+  ks.cfg: |
+    # Oracle Linux 9 Kickstart — automated headless install
+    cdrom
+    text
+    eula --agreed
+
+    lang en_US.UTF-8
+    keyboard us
+    timezone UTC --isUtc
+
+    # OMIT --activate to avoid DHCP hang during offline install.
+    network --bootproto=dhcp --onboot=yes
+    firewall --enabled --ssh
+
+    rootpw --lock
+    user --name=packer --iscrypted --password=<SHA512-HASH> --groups=wheel
+
+    authselect select sssd
+    selinux --enforcing
+    bootloader --location=mbr --append="crashkernel=auto"
+    clearpart --all --initlabel
+    autopart --type=lvm
+    skipx
+    services --enabled=NetworkManager,sshd
+
+    %packages --ignoremissing --excludedocs
+    @core
+    open-vm-tools
+    cloud-init
+    sudo
+    perl
+    -iwl*firmware
+    %end
+
+    %post --erroronfail
+    # Passwordless sudo for build user.
+    echo "packer ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/packer
+    chmod 440 /etc/sudoers.d/packer
+    sed -i "s/^.*requiretty/#Defaults requiretty/" /etc/sudoers
+
+    # Allow password auth so Packer/Ansible can connect.
+    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+    # Lock cloud-init to VMware backdoor datasource exclusively.
+    cat > /etc/cloud/cloud.cfg.d/99-vmware-datasource.cfg <<CLOUDCFG
+    datasource_list: [ VMware, OVF, None ]
+    CLOUDCFG
+
+    # Enable required services.
+    systemctl enable vmtoolsd
+    systemctl enable cloud-init
+
+    # Clear Anaconda-generated NM connections.
+    rm -f /etc/NetworkManager/system-connections/*.nmconnection
+
+    # Wipe machine ID for clean template cloning.
+    truncate -s 0 /etc/machine-id
+    %end
+
+    poweroff
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kickstart-server
+  namespace: my-tanzu-namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kickstart-server
+  template:
+    metadata:
+      labels:
+        app: kickstart-server
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: kickstart
+              mountPath: /usr/share/nginx/html/ks.cfg
+              subPath: ks.cfg
+      volumes:
+        - name: kickstart
+          configMap:
+            name: kickstart-file
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kickstart-service
+  namespace: my-tanzu-namespace
+spec:
+  type: LoadBalancer
+  selector:
+    app: kickstart-server
+  ports:
+    - port: 80
+      targetPort: 8080

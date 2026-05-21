@@ -1,0 +1,49 @@
+# STEP 3: Stage 1 installation VM. Boots from the ISO imported in Step 1.
+# imageName is intentionally blank — the VM boots from the cdrom volume.
+# powerState: poweredOn causes the VM Operator to start it immediately.
+#
+# ── GRUB BOOT COMMAND ─────────────────────────────────────────────────────────
+# Open the VM console in vSphere. At the GRUB menu press 'e', go to the
+# linuxefi line, and append this single line, then press Ctrl-x / F10:
+#
+#   ip=<VM-IP>::<GATEWAY>:<NETMASK>:<HOSTNAME>:ens192:none nameserver=<DNS> inst.ks=http://<LB-IP>/ks.cfg
+#
+# <VM-IP>    free IP on the workload network (temporary, install only)
+# <GATEWAY>  workload network default gateway
+# <NETMASK>  e.g. 255.255.255.0
+# <HOSTNAME> any short name
+# <DNS>      nameserver on the workload network
+# <LB-IP>    EXTERNAL-IP of kickstart-service:
+#              kubectl get svc kickstart-service -n my-tanzu-namespace
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: vmoperator.vmware.com/v1alpha4
+kind: VirtualMachine
+metadata:
+  name: ol9-stage1
+  namespace: my-tanzu-namespace
+spec:
+  className: best-effort-medium   # kubectl get virtualmachineclass
+  storageClass: my-storage-policy # kubectl get storageclass
+  imageName: ""
+  powerState: poweredOn
+  network:
+    interfaces:
+      - name: eth0
+        network:
+          name: my-workload-network
+          kind: Network
+  volumes:
+    - name: boot-iso
+      persistentVolumeClaim:
+        claimName: ""   # Not used — cdrom attachment managed by VM Operator
+      # The ISO imported in Step 1 is attached as a CD-ROM via the content
+      # library reference below.
+  advanced:
+    bootDiskCapacity: 40Gi
+  cdrom:
+    - name: install-iso
+      image:
+        name: oraclelinux-9-dvd-iso   # ContentLibraryItem name from Step 1
+        kind: ContentLibraryItem
+      connected: true
+      allowGuestControl: false
