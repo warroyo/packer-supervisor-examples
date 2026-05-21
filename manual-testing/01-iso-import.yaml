@@ -5,7 +5,7 @@ apiVersion: imageregistry.vmware.com/v1alpha1
 kind: ContentLibraryItemImportRequest
 metadata:
   name: oraclelinux-9-dvd-iso
-  namespace: my-tanzu-namespace
+  namespace: production-c5b8n
 spec:
   source:
     url: "https://yum.oracle.com/ISOS/OracleLinux/OL9/u5/x86_64/OracleLinux-R9-U5-x86_64-dvd.iso"
@@ -18,6 +18,8 @@ spec:
       value: "<sha256-of-iso>"
   target:
     library:
+      apiVersion: imageregistry.vmware.com/v1alpha1
+      kind: ContentLibrary
       name: cl-production-images
     item:
       name: oraclelinux-9-dvd-iso

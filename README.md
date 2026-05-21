@@ -150,8 +150,8 @@ scripts/remaster-iso.sh  ←── kickstart rendered from data/ks.cfg.tpl
 ## Configuring a writable content library
 
 The Supervisor namespace must have at least one content library configured as
-writable before Packer or govc can import or publish images. This is a one-time
-setup step done with DCLI.
+writable and import-enabled before Packer, govc, or `ContentLibraryItemImportRequest`
+can import or publish images. This is a one-time setup step done with DCLI.
 
 ### Find the content library ID
 
@@ -168,17 +168,20 @@ namespaces instances get --namespace <your-namespace>
 Look for the `content_libraries` array in the output. Each entry has a
 `content_library` field — that value is the content library ID (a UUID).
 
-### Enable write access
+### Enable write access and import
 
 Still inside the DCLI interactive session, pass the ID from the previous step:
 
 ```
 namespaces instances update --namespace <your-namespace> \
-  --content-libraries '[{"content_library": "<library-id>", "writable": true}]'
+  --content-libraries '[{"content_library": "<library-id>", "writable": true, "allow_import": true}]'
 ```
 
-This updates the namespace binding for that library to allow write operations.
-Repeat for each library that needs to be writable (source ISO library, stage 1
+`writable: true` allows publishing VM templates into the library.
+`allow_import: true` allows `ContentLibraryItemImportRequest` (and govc) to stream
+external content (ISOs, OVFs) into the library. Both are required.
+
+Repeat for each library that needs these permissions (source ISO library, stage 1
 output library, and production library if they differ).
 
 After this you can confirm the library is visible to the namespace with:

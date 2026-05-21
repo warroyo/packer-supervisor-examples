@@ -1,6 +1,5 @@
 # STEP 3: Stage 1 installation VM. Boots from the ISO imported in Step 1.
-# imageName is intentionally blank — the VM boots from the cdrom volume.
-# powerState: poweredOn causes the VM Operator to start it immediately.
+# Apply the PVC first, then the VirtualMachine.
 #
 # ── GRUB BOOT COMMAND ─────────────────────────────────────────────────────────
 # Open the VM console in vSphere. At the GRUB menu press 'e', go to the
@@ -14,36 +13,41 @@
 # <HOSTNAME> any short name
 # <DNS>      nameserver on the workload network
 # <LB-IP>    EXTERNAL-IP of kickstart-service:
-#              kubectl get svc kickstart-service -n my-tanzu-namespace
+#              kubectl get svc kickstart-service -n production-c5b8n
 # ─────────────────────────────────────────────────────────────────────────────
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boot-disk
+  namespace: production-c5b8n
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Block
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: vsan-default-storage-policy
+---
 apiVersion: vmoperator.vmware.com/v1alpha4
 kind: VirtualMachine
 metadata:
   name: ol9-stage1
-  namespace: my-tanzu-namespace
+  namespace: production-c5b8n
 spec:
-  className: best-effort-medium   # kubectl get virtualmachineclass
-  storageClass: my-storage-policy # kubectl get storageclass
-  imageName: ""
-  powerState: poweredOn
-  network:
-    interfaces:
-      - name: eth0
-        network:
-          name: my-workload-network
-          kind: Network
+  className: best-effort-medium
+  storageClass: vsan-default-storage-policy
+  powerState: PoweredOn
+  guestID: otherGuest
   volumes:
     - name: boot-iso
       persistentVolumeClaim:
-        claimName: ""   # Not used — cdrom attachment managed by VM Operator
-      # The ISO imported in Step 1 is attached as a CD-ROM via the content
-      # library reference below.
-  advanced:
-    bootDiskCapacity: 40Gi
+        claimName: boot-disk
   cdrom:
-    - name: install-iso
+    - name: installiso
       image:
-        name: oraclelinux-9-dvd-iso   # ContentLibraryItem name from Step 1
-        kind: ContentLibraryItem
+        name: vmi-e8e46b7e213456c57   # VirtualMachineImage name — kubectl get vmi -n production-c5b8n
+        kind: VirtualMachineImage
       connected: true
-      allowGuestControl: false
+      allowGuestControl: true

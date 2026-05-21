@@ -6,7 +6,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kickstart-file
-  namespace: my-tanzu-namespace
+  namespace: production-c5b8n
 data:
   ks.cfg: |
     # Oracle Linux 9 Kickstart — automated headless install
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kickstart-server
-  namespace: my-tanzu-namespace
+  namespace: production-c5b8n
 spec:
   replicas: 1
   selector:
@@ -102,7 +102,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: kickstart-service
-  namespace: my-tanzu-namespace
+  namespace: production-c5b8n
 spec:
   type: LoadBalancer
   selector:
